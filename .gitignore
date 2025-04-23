@@ -20,3 +20,7 @@ usr/
 qemu/
 ovmf/
 
+compile_commands.json
+.cache/
+
+build/
