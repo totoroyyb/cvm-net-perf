@@ -15,7 +15,8 @@ monitor
 source-commit.*
 stable-commits
 
-/usr/
+usr/
 
 qemu/
+ovmf/
 
