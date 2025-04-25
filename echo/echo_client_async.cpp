@@ -16,6 +16,7 @@
 #include <vector> // For storing latencies
 #include <numeric> // For accumulate (optional)
 #include <algorithm> // For sort, percentile calculation
+#include <cmath> // For std::ceil
 
 #define CLOSE_SOCKET close
 
