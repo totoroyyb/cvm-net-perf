@@ -9,16 +9,20 @@ CXXFLAGS = -Wall -std=c++17
 # Source files
 SERVER_SRC = echo_server.cpp
 CLIENT_SRC = echo_client.cpp
+SERVER_ASYNC_SRC = echo_server_async.cpp
+CLIENT_ASYNC_SRC = echo_client_async.cpp
 
 # Build directory
 BUILD_DIR = build
 
 # Executable names
 SERVER_EXEC = $(BUILD_DIR)/echo_server
+SERVER_EXEC_ASYNC = $(BUILD_DIR)/echo_server_async
 CLIENT_EXEC = $(BUILD_DIR)/echo_client
+CLIENT_EXEC_ASYNC = $(BUILD_DIR)/echo_client_async
 
 
-all: $(BUILD_DIR) $(SERVER_EXEC) $(CLIENT_EXEC)
+all: $(BUILD_DIR) $(SERVER_EXEC) $(CLIENT_EXEC) $(SERVER_EXEC_ASYNC) $(CLIENT_EXEC_ASYNC)
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
@@ -33,6 +37,15 @@ $(SERVER_EXEC): $(SERVER_SRC) | $(BUILD_DIR)
 $(CLIENT_EXEC): $(CLIENT_SRC) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(CLIENT_SRC) -o $(CLIENT_EXEC)
 	@echo "Built $(CLIENT_EXEC) successfully."
+
+$(SERVER_EXEC_ASYNC): $(SERVER_ASYNC_SRC) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(SERVER_ASYNC_SRC) -o $(SERVER_EXEC_ASYNC)
+	@echo "Built $(SERVER_EXEC_ASYNC) successfully."
+
+# Rule to build the async client executable
+$(CLIENT_EXEC_ASYNC): $(CLIENT_ASYNC_SRC) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(CLIENT_ASYNC_SRC) -o $(CLIENT_EXEC_ASYNC)
+	@echo "Built $(CLIENT_EXEC_ASYNC) successfully."
 
 clean:
 	rm -rf $(BUILD_DIR) *.o

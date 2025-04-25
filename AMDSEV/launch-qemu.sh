@@ -254,7 +254,8 @@ fi
 if [ "$USE_DEFAULT_NETWORK" = "1" ]; then
     #echo "guest port 22 is fwd to host 8000..."
     #add_opts "-netdev user,id=vmnic,hostfwd=tcp::8000-:22 -device e1000,netdev=vmnic,romfile="
-    add_opts "-netdev user,id=vmnic,hostfwd=tcp::2222-:22"
+    # add_opts "-netdev user,id=vmnic,hostfwd=tcp::2222-:22"
+    add_opts "-netdev user,id=vmnic,hostfwd=tcp::2222-:22,hostfwd=tcp::65432-:65432,hostfwd=udp::65434-:65434"
     add_opts " -device virtio-net-pci,disable-legacy=on,iommu_platform=true,netdev=vmnic,romfile="
 fi
 

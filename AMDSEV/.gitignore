@@ -1,3 +1,5 @@
 distros/ubuntu-18.04/src
 distros/fedora-28/src
 source-commit.*
+
+guest.fd

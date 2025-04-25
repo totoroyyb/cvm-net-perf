@@ -1,5 +1,7 @@
 *.raw
 *.qcow2
+*.swp
+*.fd
 
 *.iso
 *.log
