@@ -1,0 +1,45 @@
+Starting Open-Loop Test...
+Number of client threads: 20
+Target arrival rate per client: 2500 Hz
+Running for 10 seconds.
+Target Server: 127.0.0.1:65432
+All client threads launched. Running workload...
+Time limit reached. Signaling threads to stop...
+Waiting for client threads to finish...
+Thread Thread 8: 1Thread 15: 476 requests still pending in map at exit.509 requests still pending in map at exit.
+Thread 6: 568: 705 requests still pending in map at exit.
+
+Thread 11: 435 requests still pending in map at exit.Thread 0: 705 requests still pending in map at exit.Thread 5
+Thread 3: 636 requests still pending in map at exit.
+Thread 13:  requests still pending in map at exit.
+
+: 620 requests still pending in map at exit.
+Thread Thread 18: 456 requests still pending in map at exit.
+Thread 9: 539 requests still pending in map at exit.Thread 19: 443 requests still pending in map at exit.
+491 requests still pending in map at exit.
+
+7: 500 requests still pending in map at exit.
+Thread 2: 600 requests still pending in map at exit.
+Thread 16: 329 requests still pending in map at exit.
+Thread 4: 539 requests still pending in map at exit.
+Thread 12: 520 requests still pending in map at exit.
+Thread 10: 525 requests still pending in map at exit.
+Thread 14: 487 requests still pending in map at exit.
+Thread 17: 404 requests still pending in map at exit.
+All client threads have finished.
+Processing results for 494809 completed requests...
+-------------------- Results --------------------
+Mode:                     Open Loop (2 Threads/Client, ID Matching)
+Clients:                  20
+Target Rate (per client): 2500 Hz
+Target Rate (total):      50000 Hz
+Total Requests Completed: 494809
+Test Duration:            10 seconds
+Achieved Throughput:      49480.9 req/sec
+Latency (microseconds) for completed requests:
+  Average: 333.12
+  p50:          267
+  p90:          631
+  p95:          765
+  p99:          933
+-------------------------------------------------

@@ -18,9 +18,9 @@ Total Requests Completed: 50153
 Test Duration:            10 seconds
 Achieved Throughput:      5015.3 req/sec
 Latency (microseconds) for completed requests:
-  Average: 146.976
-  p50:          149
-  p90:          188
-  p95:          196
-  p99:          223
+  Average: 132.684
+  p50:          130
+  p90:          167
+  p95:          187
+  p99:          199
 -------------------------------------------------

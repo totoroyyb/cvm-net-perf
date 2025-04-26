@@ -1,0 +1,45 @@
+Starting Open-Loop Test...
+Number of client threads: 20
+Target arrival rate per client: 3500 Hz
+Running for 10 seconds.
+Target Server: 127.0.0.1:65432
+All client threads launched. Running workload...
+Time limit reached. Signaling threads to stop...
+Waiting for client threads to finish...
+Thread 5: 3951 requests still pending in map at exit.
+Thread 9: 3877 requests still pending in map at exit.
+Thread 1: 4214 requests still pending in map at exit.Thread 6: 4015 requests still pending in map at exit.
+
+Thread 10: 3871 requests still pending in map at exit.
+Thread Thread 2: 4308 requests still pending in map at exit.16: 
+Thread 19: 3689 requests still pending in map at exit.
+3468 requests still pending in map at exit.
+Thread 13: 3681 requests still pending in map at exit.
+Thread 11: 3792 requests still pending in map at exit.
+Thread 8: 3849 requests still pending in map at exit.
+Thread 14: 3621 requests still pending in map at exit.
+Thread 4: 4178 requests still pending in map at exit.
+Thread 18: 3544 requests still pending in map at exit.
+Thread 7: 3985 requests still pending in map at exit.
+Thread 12: 3725 requests still pending in map at exit.
+Thread 15: 3643 requests still pending in map at exit.
+Thread 17: 3563 requests still pending in map at exit.
+Thread 3: 4147 requests still pending in map at exit.
+Thread 0: 4261 requests still pending in map at exit.
+All client threads have finished.
+Processing results for 631828 completed requests...
+-------------------- Results --------------------
+Mode:                     Open Loop (2 Threads/Client, ID Matching)
+Clients:                  20
+Target Rate (per client): 3500 Hz
+Target Rate (total):      70000 Hz
+Total Requests Completed: 631828
+Test Duration:            10 seconds
+Achieved Throughput:      63182.8 req/sec
+Latency (microseconds) for completed requests:
+  Average: 488.082
+  p50:          485
+  p90:          699
+  p95:          747
+  p99:          825
+-------------------------------------------------

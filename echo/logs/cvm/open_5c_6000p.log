@@ -1,0 +1,34 @@
+Starting Open-Loop Test...
+Number of client threads: 5
+Target arrival rate per client: 6000 Hz
+Running for 10 seconds.
+Target Server: 127.0.0.1:65432
+All client threads launched. Running workload...
+WARNING: Could not parse request ID from response part: 'thread'
+Thread 4: WARNING: Failed to parse request ID from received data.
+WARNING: Could not parse request ID from response part: 'thread'
+Thread 4: WARNING: Failed to parse request ID from received data.
+Time limit reached. Signaling threads to stop...
+Waiting for client threads to finish...
+Thread 1: Thread 4: 83 requests still pending in map at exit.
+Thread 2: 100 requests still pending in map at exit.
+92 requests still pending in map at exit.
+Thread 0: 143 requests still pending in map at exit.Thread 3: 105
+ requests still pending in map at exit.
+All client threads have finished.
+Processing results for 301593 completed requests...
+-------------------- Results --------------------
+Mode:                     Open Loop (2 Threads/Client, ID Matching)
+Clients:                  5
+Target Rate (per client): 6000 Hz
+Target Rate (total):      30000 Hz
+Total Requests Completed: 301593
+Test Duration:            10 seconds
+Achieved Throughput:      30159.3 req/sec
+Latency (microseconds) for completed requests:
+  Average: 148.481
+  p50:          148
+  p90:          196
+  p95:          224
+  p99:          313
+-------------------------------------------------
