@@ -9,26 +9,25 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h> // For TCP_NODELAY
 #include <arpa/inet.h> // For inet_pton
 #include <netdb.h> // For host resolution (though not strictly needed for IP)
-#include <netinet/tcp.h> // For TCP_NODELAY
 #include <cerrno> // For errno
 #include <atomic> // For atomic flag
 #include <vector> // For storing latencies
 #include <numeric> // For accumulate (optional)
 #include <algorithm> // For sort, percentile calculation
 #include <cmath> // For std::ceil
-#include <future> // Needed for open loop timing
 
 #define CLOSE_SOCKET close
 
+// --- Configuration ---
 const char* HOST = "127.0.0.1"; // Server IP address (localhost)
 const int PORT = 65432;         // Server port (must match server)
 const int BUFFER_SIZE = 1024;
-const int NUM_CLIENTS = 20;      // Number of concurrent client threads
-const double ARRIVAL_RATE_HZ = 20000.0; // Target requests per second per client (used in open-loop)
+const int NUM_CLIENTS = 20;      // Number of concurrent client threads (Primary Tuning Parameter)
 const int RUN_DURATION_SECONDS = 10; // How long the test should run
-const bool OPEN_LOOP_MODE = true; // Set to true for open-loop, false for closed-loop
+// --- End Configuration ---
 
 // Global flag to signal threads to stop
 std::atomic<bool> keep_running(true);
@@ -38,53 +37,38 @@ void error(const char *msg, int thread_id = -1) {
     char error_buf[256];
     snprintf(error_buf, sizeof(error_buf), "Thread %d: ERROR %s", thread_id, msg);
     perror(error_buf); // Print error message based on errno (POSIX)
-    // In a multithreaded scenario, exiting the whole process might not be ideal.
-    // Consider throwing an exception or signaling failure. For simplicity, we still exit here.
     if (thread_id != -1) {
          std::cerr << "Thread " << thread_id << " exiting due to error." << std::endl;
-         // std::terminate(); // Or use a thread-specific exit mechanism if needed
     }
     exit(1); // Exit the entire process on critical error
 }
 
-
-// Function executed by each client thread
+// Function executed by each client thread (Closed-Loop)
 void client_thread_func(int thread_id, std::atomic<bool>& running_flag, std::vector<std::chrono::microseconds>& latencies) {
     int sockfd;
     struct sockaddr_in serv_addr;
     char buffer[BUFFER_SIZE];
     int n;
-    const std::chrono::microseconds inter_arrival_time(
-        static_cast<long long>(1'000'000.0 / ARRIVAL_RATE_HZ) // Calculate interval in microseconds (only used in open-loop)
-    );
-    // Pre-allocate slightly more pessimistically if RTT might exceed inter-arrival time
-    latencies.reserve(static_cast<size_t>(ARRIVAL_RATE_HZ * RUN_DURATION_SECONDS * 1.5)); 
+    // Pre-allocate based on estimated max possible rate (adjust multiplier as needed)
+    latencies.reserve(static_cast<size_t>(100000 * RUN_DURATION_SECONDS * 1.2)); 
 
     // 1. Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0) {
         error("opening socket", thread_id);
     }
-    
+
     int flag = 1;
     if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (char *) &flag, sizeof(int)) < 0) {
-        // This might not be fatal, but log it.
         char error_msg[100];
         snprintf(error_msg, sizeof(error_msg), "Thread %d: WARNING setsockopt(TCP_NODELAY) failed", thread_id);
         perror(error_msg);
-        // Continue running even if TCP_NODELAY fails
     }
 
-    // std::cout << "Thread " << thread_id << ": Socket created." << std::endl; // Optional: Verbose logging
-
-    // Zero out the server address structure
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-
     // Prepare the server address structure
-    serv_addr.sin_family = AF_INET; // Address family (IPv4)
-    serv_addr.sin_port = htons(PORT); // Server port (network byte order)
-
-    // Convert IPv4 address from text to binary form using POSIX inet_pton
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
     if (inet_pton(AF_INET, HOST, &serv_addr.sin_addr) <= 0) {
         error("Invalid address/ Address not supported", thread_id);
     }
@@ -96,43 +80,18 @@ void client_thread_func(int thread_id, std::atomic<bool>& running_flag, std::vec
          } else {
              char error_msg[100];
              snprintf(error_msg, sizeof(error_msg), "connecting (errno %d)", errno);
-             // error(error_msg, thread_id); // error() exits process, maybe just log and return
              perror(error_msg);
              std::cerr << "Thread " << thread_id << " failed to connect." << std::endl;
          }
          CLOSE_SOCKET(sockfd);
          return; // Exit this thread if connection fails
     }
-    // std::cout << "Thread " << thread_id << ": Connected to server at " << HOST << ":" << PORT << std::endl; // Less verbose during run
 
-
-    // 3. Communication loop
+    // 3. Communication loop (Closed-Loop: Send -> Receive -> Send ...)
     std::string message_base = "Hello from client thread " + std::to_string(thread_id) + " msg: ";
     long long msg_count = 0;
-    // Initialize next_send_time for the *first* request
-    auto next_send_time = std::chrono::high_resolution_clock::now(); 
 
     while (running_flag.load()) { // Check the flag before starting a new request
-
-        if (OPEN_LOOP_MODE) {
-            // --- Open-Loop Timing ---
-            // Wait until the scheduled time for this request
-            auto current_time = std::chrono::high_resolution_clock::now();
-            if (current_time < next_send_time) {
-                 // Check flag again before sleeping, in case the run duration ended while processing the previous request
-                if (!running_flag.load()) break;
-                std::this_thread::sleep_until(next_send_time);
-            }
-            // else: We are behind schedule, send immediately.
-
-            // Schedule the *next* send time based on the *current* scheduled time.
-            // This ensures send attempts maintain the target rate, even if reads block.
-            next_send_time += inter_arrival_time;
-            // --- End Open-Loop Timing ---
-        }
-        // else: In closed-loop mode, we proceed immediately after the previous response is received.
-
-        // Record start time just before sending
         auto start_time = std::chrono::high_resolution_clock::now();
 
         std::string message = message_base + std::to_string(msg_count++);
@@ -140,11 +99,9 @@ void client_thread_func(int thread_id, std::atomic<bool>& running_flag, std::vec
         // Send the message
         n = write(sockfd, message.c_str(), message.length());
         if (n < 0) {
-             // Handle specific errors like EPIPE (broken pipe)
              if (errno == EPIPE) {
                  std::cerr << "Thread " << thread_id << ": Server closed connection (Broken pipe)." << std::endl;
              } else {
-                 // error("writing to socket", thread_id); // Avoid process exit
                  char error_msg[100];
                  snprintf(error_msg, sizeof(error_msg), "Thread %d: ERROR writing to socket", thread_id);
                  perror(error_msg);
@@ -156,37 +113,30 @@ void client_thread_func(int thread_id, std::atomic<bool>& running_flag, std::vec
             // Potentially retry or handle partial write
         }
 
-        // Receive the echo back from the server using POSIX read
-        memset(buffer, 0, BUFFER_SIZE); // Clear buffer before reading
-        n = read(sockfd, buffer, BUFFER_SIZE - 1); // Read up to BUFFER_SIZE - 1 bytes
+        // Receive the echo back from the server using POSIX read (blocking)
+        memset(buffer, 0, BUFFER_SIZE);
+        n = read(sockfd, buffer, BUFFER_SIZE - 1);
         if (n < 0) {
-             // error("reading from socket", thread_id); // Avoid process exit
              char error_msg[100];
              snprintf(error_msg, sizeof(error_msg), "Thread %d: ERROR reading from socket", thread_id);
              perror(error_msg);
              break; // Exit loop on error
         } else if (n == 0) {
-             // Server closed the connection gracefully
              std::cerr << "Thread " << thread_id << ": Server closed connection." << std::endl;
              break; // Exit loop
         }
 
-        // Calculate and record latency (time from send start to receive end)
+        // Calculate and record latency
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
         latencies.push_back(duration);
 
-        // --- Loop Control ---
-        // In OPEN_LOOP_MODE, the sleep/timing logic is handled at the beginning of the loop.
-        // In CLOSED_LOOP_MODE, the loop continues immediately after the read completes.
-        // --- End Loop Control ---
+        // No artificial delay in closed-loop mode, loop continues immediately
     }
 
     // 4. Close the socket
     CLOSE_SOCKET(sockfd);
-    // std::cout << "Thread " << thread_id << ": Connection closed." << std::endl; // Less verbose
 }
-
 
 // Helper function to calculate percentiles
 long long calculate_percentile(const std::vector<std::chrono::microseconds>& sorted_latencies, double percentile) {
@@ -198,36 +148,24 @@ long long calculate_percentile(const std::vector<std::chrono::microseconds>& sor
     return sorted_latencies[index].count();
 }
 
-
 int main() {
-    std::cout << "Starting " << NUM_CLIENTS << " client threads..." << std::endl;
-    std::cout << "Mode: " << (OPEN_LOOP_MODE ? "Open Loop" : "Closed Loop") << std::endl;
-    if (OPEN_LOOP_MODE) {
-        if (ARRIVAL_RATE_HZ <= 0) {
-             std::cerr << "Error: ARRIVAL_RATE_HZ must be positive for open-loop mode." << std::endl;
-             return 1;
-        }
-        std::cout << "Target arrival rate per client: " << ARRIVAL_RATE_HZ << " Hz" << std::endl;
-    } else {
-        std::cout << "Target arrival rate: N/A (Closed Loop - as fast as possible)" << std::endl;
-    }
+    std::cout << "Starting Closed-Loop Test..." << std::endl;
+    std::cout << "Number of client threads: " << NUM_CLIENTS << std::endl;
     std::cout << "Running for " << RUN_DURATION_SECONDS << " seconds." << std::endl;
-
+    std::cout << "Target Server: " << HOST << ":" << PORT << std::endl;
 
     std::vector<std::thread> client_threads;
-    std::vector<std::vector<std::chrono::microseconds>> all_latencies(NUM_CLIENTS); // Store latencies per thread
+    std::vector<std::vector<std::chrono::microseconds>> all_latencies(NUM_CLIENTS);
     client_threads.reserve(NUM_CLIENTS);
 
     // Launch threads
     for (int i = 0; i < NUM_CLIENTS; ++i) {
-        all_latencies[i].clear(); // Ensure vector is empty before passing
+        all_latencies[i].clear();
         client_threads.emplace_back(client_thread_func, i, std::ref(keep_running), std::ref(all_latencies[i]));
-         // Small delay between starting threads to potentially avoid overwhelming
-         // the server's accept queue or causing connection storms.
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Small startup delay
     }
 
-    std::cout << "All client threads launched. Running workload for " << RUN_DURATION_SECONDS << " seconds..." << std::endl;
+    std::cout << "All client threads launched. Running workload..." << std::endl;
 
     // Wait for the specified duration
     std::this_thread::sleep_for(std::chrono::seconds(RUN_DURATION_SECONDS));
@@ -236,7 +174,7 @@ int main() {
     std::cout << "Time limit reached. Signaling threads to stop..." << std::endl;
     keep_running.store(false);
 
-    // Join threads (wait for them to finish their current request and exit)
+    // Join threads
     std::cout << "Waiting for client threads to finish..." << std::endl;
     for (auto& th : client_threads) {
         if (th.joinable()) {
@@ -259,38 +197,34 @@ int main() {
     if (combined_latencies.empty()) {
         std::cout << "No requests completed successfully." << std::endl;
     } else {
-        // Sort latencies for percentile calculation
         std::sort(combined_latencies.begin(), combined_latencies.end());
 
-        // Calculate percentiles (in microseconds)
         long long p50 = calculate_percentile(combined_latencies, 50.0);
         long long p90 = calculate_percentile(combined_latencies, 90.0);
         long long p95 = calculate_percentile(combined_latencies, 95.0);
         long long p99 = calculate_percentile(combined_latencies, 99.0);
 
-        // Calculate average latency (optional)
         long long sum_us = 0;
         for(const auto& lat : combined_latencies) {
             sum_us += lat.count();
         }
         double avg_us = static_cast<double>(sum_us) / combined_latencies.size();
-
-        // Calculate throughput (requests per second)
         double throughput_rps = static_cast<double>(total_requests) / RUN_DURATION_SECONDS;
 
         std::cout << "-------------------- Results --------------------" << std::endl;
+        std::cout << "Mode:                     Closed Loop" << std::endl;
+        std::cout << "Clients:                  " << NUM_CLIENTS << std::endl;
         std::cout << "Total Requests Completed: " << total_requests << std::endl;
         std::cout << "Test Duration:            " << RUN_DURATION_SECONDS << " seconds" << std::endl;
         std::cout << "Achieved Throughput:      " << throughput_rps << " req/sec" << std::endl;
         std::cout << "Latency (microseconds):" << std::endl;
         std::cout << "  Average: " << avg_us << std::endl;
-        std::cout << "  p50 (Median): " << p50 << std::endl;
+        std::cout << "  p50: " << p50 << std::endl;
         std::cout << "  p90:          " << p90 << std::endl;
         std::cout << "  p95:          " << p95 << std::endl;
         std::cout << "  p99:          " << p99 << std::endl;
         std::cout << "-------------------------------------------------" << std::endl;
     }
-
 
     return 0;
 }
