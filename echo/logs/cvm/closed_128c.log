@@ -1,0 +1,22 @@
+Starting Closed-Loop Test...
+Number of client threads: 128
+Running for 10 seconds.
+Target Server: 127.0.0.1:65432
+All client threads launched. Running workload...
+Time limit reached. Signaling threads to stop...
+Waiting for client threads to finish...
+All client threads have finished.
+Processing results for 716340 completed requests...
+-------------------- Results --------------------
+Mode:                     Closed Loop
+Clients:                  128
+Total Requests Completed: 716340
+Test Duration:            10 seconds
+Achieved Throughput:      71634 req/sec
+Latency (microseconds):
+  Average: 1902.31
+  p50:          1992
+  p90:          2159
+  p95:          2221
+  p99:          2377
+-------------------------------------------------
