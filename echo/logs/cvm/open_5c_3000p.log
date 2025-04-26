@@ -1,0 +1,29 @@
+Starting Open-Loop Test...
+Number of client threads: 5
+Target arrival rate per client: 3000 Hz
+Running for 10 seconds.
+Target Server: 127.0.0.1:65432
+All client threads launched. Running workload...
+Time limit reached. Signaling threads to stop...
+Waiting for client threads to finish...
+Thread Thread 2: 0: 1 requests still pending in map at exit.
+Thread 1: 7 requests still pending in map at exit.
+Thread 3: 6 requests still pending in map at exit.
+2 requests still pending in map at exit.
+All client threads have finished.
+Processing results for 150589 completed requests...
+-------------------- Results --------------------
+Mode:                     Open Loop (2 Threads/Client, ID Matching)
+Clients:                  5
+Target Rate (per client): 3000 Hz
+Target Rate (total):      15000 Hz
+Total Requests Completed: 150589
+Test Duration:            10 seconds
+Achieved Throughput:      15058.9 req/sec
+Latency (microseconds) for completed requests:
+  Average: 142.496
+  p50:          148
+  p90:          178
+  p95:          189
+  p99:          218
+-------------------------------------------------

@@ -6,17 +6,17 @@ All client threads launched. Running workload...
 Time limit reached. Signaling threads to stop...
 Waiting for client threads to finish...
 All client threads have finished.
-Processing results for 698674 completed requests...
+Processing results for 662306 completed requests...
 -------------------- Results --------------------
 Mode:                     Closed Loop
 Clients:                  64
-Total Requests Completed: 698674
+Total Requests Completed: 662306
 Test Duration:            10 seconds
-Achieved Throughput:      69867.4 req/sec
+Achieved Throughput:      66230.6 req/sec
 Latency (microseconds):
-  Average: 943.595
-  p50:          958
-  p90:          1067
-  p95:          1111
-  p99:          1219
+  Average: 997.374
+  p50:          1007
+  p90:          1131
+  p95:          1187
+  p99:          1352
 -------------------------------------------------

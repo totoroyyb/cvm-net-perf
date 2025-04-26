@@ -20,6 +20,8 @@
 #include <cmath> // For std::ceil
 #include <deque> // For storing pending request start times
 #include <fcntl.h> // For fcntl (non-blocking socket)
+#include <sys/select.h> // For select()
+#include <sys/time.h> // For struct timeval (select timeout)
 #include <mutex>   // For std::mutex
 #include <condition_variable> // Potentially useful, but sticking to atomics/mutex for now
 #include <unordered_map> // For request ID mapping
@@ -202,6 +204,55 @@ void receive_loop(int sockfd, int thread_id, PendingRequestData& pending_request
             }
         }
     }
+    
+    // --- Drain remaining data after loop exit ---
+    // Try to read any remaining data that might have arrived just before stopping
+    while (true) {
+        memset(buffer, 0, BUFFER_SIZE);
+        n = read(sockfd, buffer, BUFFER_SIZE - 1);
+
+        if (n > 0) { // Data received during drain
+            // std::cout << "Thread " << thread_id << ": Drained " << n << " bytes." << std::endl;
+            auto end_time = std::chrono::high_resolution_clock::now();
+            long long request_id = parse_request_id(buffer, n);
+
+            if (request_id != -1) {
+                std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+                bool found_pending = false;
+                { // Lock scope
+                    std::lock_guard<std::mutex> lock(pending_requests.mtx);
+                    auto it = pending_requests.times.find(request_id);
+                    if (it != pending_requests.times.end()) {
+                        start_time = it->second;
+                        pending_requests.times.erase(it);
+                        found_pending = true;
+                    }
+                } // Mutex released
+
+                if (found_pending) {
+                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
+                    latencies.push_back(duration);
+                } else {
+                     std::cerr << "Thread " << thread_id << ": WARNING (drain): Received response for ID " << request_id << " which was not pending or already processed." << std::endl;
+                }
+            } else {
+                 std::cerr << "Thread " << thread_id << ": WARNING (drain): Failed to parse request ID from received data." << std::endl;
+            }
+        } else if (n == 0) { // Connection closed during drain
+            connection_active.store(false); // Ensure sender knows if it wasn't already set
+            break;
+        } else { // n < 0
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            } else {
+                char error_msg[100];
+                snprintf(error_msg, sizeof(error_msg), "Thread %d: ERROR reading from socket during drain", thread_id);
+                perror(error_msg);
+                connection_active.store(false);
+                break; 
+            }
+        }
+    }
      // std::cout << "Thread " << thread_id << ": Receive loop exiting." << std::endl;
 }
 
@@ -246,19 +297,73 @@ void client_connection_handler(int thread_id, std::atomic<bool>& global_running_
     serv_addr.sin_port = htons(PORT);
     if (inet_pton(AF_INET, HOST, &serv_addr.sin_addr) <= 0) error("Invalid address/ Address not supported", thread_id);
 
-    // 2. Connect to the server
-    if (connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-         if (errno == ECONNREFUSED) {
+    // 2. Connect to the server (non-blocking)
+    int connect_ret = connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+
+    if (connect_ret < 0) {
+        if (errno == EINPROGRESS) {
+            // Connection attempt is in progress. Wait for completion using select().
+            fd_set write_fds;
+            struct timeval timeout;
+
+            FD_ZERO(&write_fds);
+            FD_SET(sockfd, &write_fds);
+
+            // Set a timeout (e.g., 5 seconds)
+            timeout.tv_sec = 5;
+            timeout.tv_usec = 0;
+
+            int select_ret = select(sockfd + 1, NULL, &write_fds, NULL, &timeout);
+
+            if (select_ret > 0) {
+                // Socket is writable, check for connection errors
+                int so_error = 0;
+                socklen_t len = sizeof(so_error);
+                if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len) < 0) {
+                    char error_msg[100];
+                    snprintf(error_msg, sizeof(error_msg), "Thread %d: getsockopt(SO_ERROR) failed", thread_id);
+                    perror(error_msg);
+                    CLOSE_SOCKET(sockfd);
+                    return;
+                }
+
+                if (so_error == 0) {
+                    // Connection successful!
+                    // std::cout << "Thread " << thread_id << ": Connection established." << std::endl;
+                } else {
+                    // Connection failed during the non-blocking phase
+                    std::cerr << "Thread " << thread_id << ": Connection failed after EINPROGRESS: " << strerror(so_error) << " (errno " << so_error << ")" << std::endl;
+                    CLOSE_SOCKET(sockfd);
+                    return;
+                }
+            } else if (select_ret == 0) {
+                // Timeout occurred
+                std::cerr << "Thread " << thread_id << ": Connection attempt timed out." << std::endl;
+                CLOSE_SOCKET(sockfd);
+                return;
+            } else {
+                // select() error
+                char error_msg[100];
+                snprintf(error_msg, sizeof(error_msg), "Thread %d: select() failed during connect", thread_id);
+                perror(error_msg);
+                CLOSE_SOCKET(sockfd);
+                return;
+            }
+        } else if (errno == ECONNREFUSED) {
              std::cerr << "Thread " << thread_id << ": Connection failed. Server potentially down (" << HOST << ":" << PORT << ")." << std::endl;
-         } else {
+             CLOSE_SOCKET(sockfd);
+             return;
+        } else {
+             // Other connect errors
              char error_msg[100];
              snprintf(error_msg, sizeof(error_msg), "connecting (errno %d)", errno);
              perror(error_msg);
              std::cerr << "Thread " << thread_id << " failed to connect." << std::endl;
-         }
-         CLOSE_SOCKET(sockfd);
-         return; // Cannot proceed if connection failed
+             CLOSE_SOCKET(sockfd);
+             return; // Cannot proceed if connection failed
+        }
     }
+    // If connect_ret was 0, connection succeeded immediately (less common with non-blocking)
 
     // 3. Launch Send and Receive Threads
     std::thread sender_thread(send_loop, sockfd, thread_id, std::ref(pending_requests_data),
@@ -288,6 +393,8 @@ void client_connection_handler(int thread_id, std::atomic<bool>& global_running_
     if (pending_count > 0) {
          std::cerr << "Thread " << thread_id << ": " << pending_count << " requests still pending in map at exit." << std::endl;
     }
+    
+
 }
 
 
@@ -384,7 +491,7 @@ int main() {
         std::cout << "Achieved Throughput:      " << throughput_rps << " req/sec" << std::endl;
         std::cout << "Latency (microseconds) for completed requests:" << std::endl;
         std::cout << "  Average: " << avg_us << std::endl;
-        std::cout << "  p50: " << p50 << std::endl;
+        std::cout << "  p50:          " << p50 << std::endl;
         std::cout << "  p90:          " << p90 << std::endl;
         std::cout << "  p95:          " << p95 << std::endl;
         std::cout << "  p99:          " << p99 << std::endl;
