@@ -25,7 +25,7 @@
 const char* HOST = "127.0.0.1"; // Server IP address (localhost)
 const int PORT = 65432;         // Server port (must match server)
 const int BUFFER_SIZE = 1024;
-const int NUM_CLIENTS = 20;      // Number of concurrent client threads (Primary Tuning Parameter)
+const int NUM_CLIENTS = 2;      // Number of concurrent client threads (Primary Tuning Parameter)
 const int RUN_DURATION_SECONDS = 10; // How long the test should run
 // --- End Configuration ---
 
@@ -219,7 +219,7 @@ int main() {
         std::cout << "Achieved Throughput:      " << throughput_rps << " req/sec" << std::endl;
         std::cout << "Latency (microseconds):" << std::endl;
         std::cout << "  Average: " << avg_us << std::endl;
-        std::cout << "  p50: " << p50 << std::endl;
+        std::cout << "  p50:          " << p50 << std::endl;
         std::cout << "  p90:          " << p90 << std::endl;
         std::cout << "  p95:          " << p95 << std::endl;
         std::cout << "  p99:          " << p99 << std::endl;
