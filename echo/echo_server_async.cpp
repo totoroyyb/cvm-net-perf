@@ -17,6 +17,7 @@
 #define MAX_EVENTS 64 // Max events to handle in one epoll_wait call
 #define NUM_WORKER_THREADS 5 // Number of worker threads
 
+const bool LOGGING = true;
 const int PORT = 65432;
 const int BUFFER_SIZE = 1024;
 
@@ -139,7 +140,9 @@ void worker_loop(int epollfd, int sockfd) {
                         break; // Exit read loop for this fd
                     } else {
                         // Data received, echo it back
-                        // std::cout << "Received " << n << " bytes from fd " << client_fd << ": " << std::string(buffer, n) << std::endl; // Optional debug
+                        if (LOGGING) {
+                          std::cout << "Received " << n << " bytes from fd " << client_fd << ": " << std::string(buffer, n) << std::endl; // Optional debug
+                        }
 
                         // Write data back (simple blocking write for now)
                         // TODO: Implement non-blocking write with EPOLLET/EPOLLOUT for production
