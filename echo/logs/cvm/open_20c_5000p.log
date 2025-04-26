@@ -6,40 +6,40 @@ Target Server: 127.0.0.1:65432
 All client threads launched. Running workload...
 Time limit reached. Signaling threads to stop...
 Waiting for client threads to finish...
-Thread 18: 24735 requests still pending in map at exit.
-Thread 14: 24795 requests still pending in map at exit.
-Thread 11: 24630 requests still pending in map at exit.
-Thread 12: Thread 10: 25056 requests still pending in map at exit.
-24860 requests still pending in map at exit.
-Thread 3: 25422 requests still pending in map at exit.
-Thread 13: 24584 requests still pending in map at exit.
-Thread Thread 0: 25677 requests still pending in map at exit.
-2: 25540 requests still pending in map at exit.
-Thread 8: 24817 requests still pending in map at exit.
-Thread 1: 25345 requests still pending in map at exit.
-Thread 15: 24432 requests still pending in map at exit.
-Thread 17: 24491 requests still pending in map at exit.
-Thread 5: 25280 requests still pending in map at exit.
-Thread 9: 24898 requests still pending in map at exit.
-Thread 4: 24967 requests still pending in map at exit.
-Thread 7: 24887 requests still pending in map at exit.
-Thread 16: 24730 requests still pending in map at exit.
-Thread 19: 24568 requests still pending in map at exit.
-Thread 6: 24924 requests still pending in map at exit.
+Thread 8: 23427 requests still pending in map at exit.
+Thread 14: 23213 requests still pending in map at exit.
+Thread 16: 22998 requests still pending in map at exit.Thread 1: Thread 10: 23356Thread Thread 9: 23182 requests still pending in map at exit.
+ requests still pending in map at exit.
+Thread 7: 23479 requests still pending in map at exit.
+0: Thread Thread 6: 23600Thread 3: 23504 requests still pending in map at exit.
+24046Thread 11: 22901 requests still pending in map at exit.
+ requests still pending in map at exit.Thread 15: 22772 requests still pending in map at exit.
+Thread 19: 
+ requests still pending in map at exit.
+24157 requests still pending in map at exit.
+22975 requests still pending in map at exit.Thread 5: 17: 23231 requests still pending in map at exit.
+Thread 4: 23853 requests still pending in map at exit.23348 requests still pending in map at exit.
+
+Thread 18: 22976 requests still pending in map at exit.
+
+Thread 2: 24186 requests still pending in map at exit.
+Thread 12: 23334 requests still pending in map at exit.
+Thread 13: 22845 requests still pending in map at exit.
+
 All client threads have finished.
-Processing results for 511954 completed requests...
+Processing results for 543201 completed requests...
 -------------------- Results --------------------
 Mode:                     Open Loop (2 Threads/Client, ID Matching)
 Clients:                  20
 Target Rate (per client): 5000 Hz
 Target Rate (total):      100000 Hz
-Total Requests Completed: 511954
+Total Requests Completed: 543201
 Test Duration:            10 seconds
-Achieved Throughput:      51195.4 req/sec
+Achieved Throughput:      54320.1 req/sec
 Latency (microseconds) for completed requests:
-  Average: 560.221
-  p50:          580
-  p90:          782
-  p95:          831
-  p99:          935
+  Average: 517.495
+  p50:          521
+  p90:          731
+  p95:          774
+  p99:          857
 -------------------------------------------------

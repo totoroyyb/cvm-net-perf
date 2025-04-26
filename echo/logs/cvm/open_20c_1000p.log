@@ -4,25 +4,44 @@ Target arrival rate per client: 1000 Hz
 Running for 10 seconds.
 Target Server: 127.0.0.1:65432
 All client threads launched. Running workload...
+WARNING: Could not parse request ID from response part: 'clie'
+Thread 1: WARNING: Failed to parse request ID from received data.
 Time limit reached. Signaling threads to stop...
 Waiting for client threads to finish...
-Thread 16: 1 requests still pending in map at exit.
-Thread 17: 1 requests still pending in map at exit.
-Thread 7: 1 requests still pending in map at exit.
+Thread 7: 32 requests still pending in map at exit.
+Thread 8: 32 requests still pending in map at exit.
+Thread 3: 30 requests still pending in map at exit.
+Thread 0: 29 requests still pending in map at exit.
+Thread 14: 29 requests still pending in map at exit.
+Thread 5: 29 requests still pending in map at exit.
+Thread 2: 29 requests still pending in map at exit.
+Thread 4: 30 requests still pending in map at exit.
+Thread 18: 33 requests still pending in map at exit.
+Thread 15: 29 requests still pending in map at exit.Thread 6: 30 requests still pending in map at exit.
+
+Thread 1: 42 requests still pending in map at exit.
+Thread 17: 32 requests still pending in map at exit.
+Thread 13: 30 requests still pending in map at exit.Thread 19: 32 requests still pending in map at exit.
+
+Thread 12: 31 requests still pending in map at exit.
+Thread 10: Thread 11: 31 requests still pending in map at exit.
+32 requests still pending in map at exit.
+Thread 9: 32 requests still pending in map at exit.
+Thread 16: 32 requests still pending in map at exit.
 All client threads have finished.
-Processing results for 202124 completed requests...
+Processing results for 201502 completed requests...
 -------------------- Results --------------------
 Mode:                     Open Loop (2 Threads/Client, ID Matching)
 Clients:                  20
 Target Rate (per client): 1000 Hz
 Target Rate (total):      20000 Hz
-Total Requests Completed: 202124
+Total Requests Completed: 201502
 Test Duration:            10 seconds
-Achieved Throughput:      20212.4 req/sec
+Achieved Throughput:      20150.2 req/sec
 Latency (microseconds) for completed requests:
-  Average: 157.392
-  p50:          157
-  p90:          199
-  p95:          221
-  p99:          248
+  Average: 179.85
+  p50:          172
+  p90:          231
+  p95:          250
+  p99:          296
 -------------------------------------------------

@@ -6,27 +6,31 @@ Target Server: 127.0.0.1:65432
 All client threads launched. Running workload...
 Time limit reached. Signaling threads to stop...
 Waiting for client threads to finish...
-Thread 9: 1 requests still pending in map at exit.
-Thread 18: 1 requests still pending in map at exit.
-Thread 13: 2 requests still pending in map at exit.
-Thread 1: 1 requests still pending in map at exit.
-Thread 2: 1 requests still pending in map at exit.
-Thread 12: 1 requests still pending in map at exit.
+Thread 14: Thread 7: 1Thread 3: 1 requests still pending in map at exit.
+1 requests still pending in map at exit.
+ requests still pending in map at exit.
+Thread 17: 1 requests still pending in map at exit.
 Thread 8: 1 requests still pending in map at exit.
+Thread 12: 1 requests still pending in map at exit.
+Thread 2: 1 requests still pending in map at exit.
+Thread 6: 1 requests still pending in map at exit.
+Thread 1: 2 requests still pending in map at exit.
+Thread 11: 2 requests still pending in map at exit.
+Thread 0: 1 requests still pending in map at exit.
 All client threads have finished.
-Processing results for 404236 completed requests...
+Processing results for 404230 completed requests...
 -------------------- Results --------------------
 Mode:                     Open Loop (2 Threads/Client, ID Matching)
 Clients:                  20
 Target Rate (per client): 2000 Hz
 Target Rate (total):      40000 Hz
-Total Requests Completed: 404236
+Total Requests Completed: 404230
 Test Duration:            10 seconds
-Achieved Throughput:      40423.6 req/sec
+Achieved Throughput:      40423 req/sec
 Latency (microseconds) for completed requests:
-  Average: 210.799
-  p50:          200
-  p90:          290
-  p95:          320
-  p99:          420
+  Average: 242.328
+  p50:          234
+  p90:          325
+  p95:          359
+  p99:          429
 -------------------------------------------------

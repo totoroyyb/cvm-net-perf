@@ -1,0 +1,25 @@
+Starting Open-Loop Test...
+Number of client threads: 5
+Target arrival rate per client: 1000 Hz
+Running for 10 seconds.
+Target Server: 127.0.0.1:65432
+All client threads launched. Running workload...
+Time limit reached. Signaling threads to stop...
+Waiting for client threads to finish...
+All client threads have finished.
+Processing results for 50154 completed requests...
+-------------------- Results --------------------
+Mode:                     Open Loop (2 Threads/Client, ID Matching)
+Clients:                  5
+Target Rate (per client): 1000 Hz
+Target Rate (total):      5000 Hz
+Total Requests Completed: 50154
+Test Duration:            10 seconds
+Achieved Throughput:      5015.4 req/sec
+Latency (microseconds) for completed requests:
+  Average: 148.591
+  p50:          151
+  p90:          184
+  p95:          194
+  p99:          225
+-------------------------------------------------
