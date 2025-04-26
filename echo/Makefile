@@ -13,6 +13,7 @@ SERVER_ASYNC_SRC = echo_server_async.cpp
 CLIENT_ASYNC_SRC = echo_client_async.cpp
 CLIENT_CLOSED_SRC = echo_client_closed.cpp
 CLIENT_OPEN_SRC = echo_client_open.cpp
+WARMUP_SRC = warmup.cpp
 
 # Build directory
 BUILD_DIR = build
@@ -24,9 +25,10 @@ CLIENT_EXEC = $(BUILD_DIR)/echo_client
 CLIENT_EXEC_ASYNC = $(BUILD_DIR)/echo_client_async
 CLIENT_EXEC_CLOSED = $(BUILD_DIR)/echo_client_closed
 CLIENT_EXEC_OPEN = $(BUILD_DIR)/echo_client_open
+WARMUP_EXEC = $(BUILD_DIR)/warmup
 
 
-all: $(BUILD_DIR) $(SERVER_EXEC) $(CLIENT_EXEC) $(SERVER_EXEC_ASYNC) $(CLIENT_EXEC_ASYNC) $(CLIENT_EXEC_CLOSED) $(CLIENT_EXEC_OPEN)
+all: $(BUILD_DIR) $(SERVER_EXEC) $(CLIENT_EXEC) $(SERVER_EXEC_ASYNC) $(CLIENT_EXEC_ASYNC) $(CLIENT_EXEC_CLOSED) $(CLIENT_EXEC_OPEN) $(WARMUP_EXEC)
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
@@ -60,6 +62,11 @@ $(CLIENT_EXEC_CLOSED): $(CLIENT_CLOSED_SRC) | $(BUILD_DIR)
 $(CLIENT_EXEC_OPEN): $(CLIENT_OPEN_SRC) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(CLIENT_OPEN_SRC) -o $(CLIENT_EXEC_OPEN)
 	@echo "Built $(CLIENT_EXEC_OPEN) successfully."
+
+# Rule to build the warmup executable
+$(WARMUP_EXEC): $(WARMUP_SRC) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(WARMUP_SRC) -o $(WARMUP_EXEC)
+	@echo "Built $(WARMUP_EXEC) successfully."
 
 clean:
 	rm -rf $(BUILD_DIR) *.o
