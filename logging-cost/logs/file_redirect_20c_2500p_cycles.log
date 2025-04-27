@@ -1,8 +1,8 @@
 
  Performance counter stats for 'system wide':
 
-   144,875,893,276      instructions                     #    0.35  insn per cycle            
-   413,019,080,606      cycles                                                                
+   144,579,232,851      instructions                     #    0.35  insn per cycle            
+   414,934,269,688      cycles                                                                
 
-      12.114830506 seconds time elapsed
+      11.783220855 seconds time elapsed
 
