@@ -1,0 +1,2 @@
+obj-m += khires.o
+# CFLAGS_khires.o += -DSUPPRESS_CUSTOMIZED_IPI_HANDLER

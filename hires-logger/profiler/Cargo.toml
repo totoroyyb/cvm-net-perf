@@ -1,0 +1,18 @@
+[workspace]
+members = [
+    "rt_ffi", # Raw FFI bindings
+    "rt",     # Safe Rust wrapper
+    ".",               # The consumer application itself
+]
+resolver = "2" # Use newer feature resolver
+
+[package]
+name = "profiler"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rt = { path = "rt" }
+libc = "0.2" # Needed for sleep/yield if used
+nix = { version = "0.27", features = ["sched"] } # For sched_getcpu if needed directly
+clap = { version = "4.4", features = ["derive"] } # For command-line argument parsing

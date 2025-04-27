@@ -1,0 +1,8 @@
+[package]
+name = "rt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rt_ffi = { path = "../rt_ffi" } # Depend on the raw FFI crate
+libc = "0.2" # For CString potentially
