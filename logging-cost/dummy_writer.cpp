@@ -8,6 +8,9 @@
 #include <filesystem> 
 #include <atomic> 
 #include <csignal> 
+#include <ctime>    // For std::time_t, std::tm, std::localtime_r
+#include <iomanip>  // For std::put_time, std::setw, std::setfill
+#include <sstream>  // For std::ostringstream
 
 const int TARGET_RATE = 50000; // lines per second
 const int BATCH_SIZE = 1000;
@@ -17,6 +20,44 @@ std::atomic<bool> keep_running(true);
 void signal_handler(int signum) {
     std::cout << "\nInterrupt signal (" << signum << ") received.\n";
     keep_running = false;
+}
+
+// Function to get the current timestamp in nanoseconds since epoch
+long long get_current_timestamp_ns() {
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+}
+
+// Function to format a timestamp (nanoseconds since epoch) into a human-readable string
+// Example format: YYYY-MM-DD HH:MM:SS.nanoseconds (local time)
+std::string format_timestamp_ns(long long timestamp_ns) {
+    std::chrono::nanoseconds duration_ns(timestamp_ns);
+    std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> tp_ns(duration_ns);
+
+    auto tp_s = std::chrono::time_point_cast<std::chrono::seconds>(tp_ns);
+    auto ns_part = tp_ns - tp_s;
+
+    std::time_t time_t_val = std::chrono::system_clock::to_time_t(tp_s);
+
+    // Convert time_t to struct tm using the thread-safe localtime_r for local time
+    // Use gmtime_r(&time_t_val, &time_info) for UTC time instead
+    std::tm time_info;
+    if (localtime_r(&time_t_val, &time_info) == nullptr) {
+        return "Error formatting time";
+    }
+
+    // Use stringstream and iomanip to format the date and time
+    std::ostringstream oss;
+    // Format: YYYY-MM-DD HH:MM:SS
+    oss << std::put_time(&time_info, "%Y-%m-%d %H:%M:%S");
+    oss << "." << std::setfill('0') << std::setw(9) << ns_part.count();
+    return oss.str();
+}
+
+std::string get_current_time() {
+    long long timestamp_ns = get_current_timestamp_ns();
+    return format_timestamp_ns(timestamp_ns);
 }
 
 int main() {
@@ -64,7 +105,7 @@ int main() {
             // Write a batch of lines
             for (int i = 0; i < BATCH_SIZE; ++i) {
                 // Construct the line content
-                outfile << "Line " << (total_lines_written + i) << ": This is dummy log line number " << (total_lines_written + i) << " with some payload data.\n";
+                outfile << "[" << get_current_time() << "]" << "Line " << (total_lines_written + i) << ": This is dummy log line number " << (total_lines_written + i) << " with some payload data.\n";
                 // Basic check after writing a line (more robust checks could be added)
                 if (!outfile) {
                     throw std::runtime_error("Error during file write operation.");
