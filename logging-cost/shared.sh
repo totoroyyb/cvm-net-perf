@@ -3,21 +3,23 @@
 GUEST_HOSTNAME="ybyan@localhost"
 GUEST_PORT="2222"
 
-CLIENT="../echo/build/warmup"
+# CLIENT="../echo/build/warmup"
+CLIENT="../echo/build/echo_client_open"
 
 # LOG_PREFIX="no_print_"
 # LOG_PREFIX="print_"
 # LOG_PREFIX="file_redirect_"
 # LOG_PREFIX="log_"
-LOG_PREFIX="dummy_writer_"
+# LOG_PREFIX="dummy_writer_"
+LOG_PREFIX="file_redirect_20c_2500p_"
 
 prep() {
   mkdir -p logs
 }
 
 start_server() {
-  # ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/echo/build/echo_server_async > /tmp/server.log 2>&1" >/dev/null 2>&1
-  ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/logging-cost/build/dummy_writer" >/dev/null 2>&1
+  ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/echo/build/echo_server_async > /tmp/server.log 2>&1" >/dev/null 2>&1
+  # ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/logging-cost/build/dummy_writer" >/dev/null 2>&1
 }
 
 stop_server() {
