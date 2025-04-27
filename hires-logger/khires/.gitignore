@@ -2,3 +2,6 @@ build
 *.cmd
 *.d
 *.mod
+
+# clangd related files
+.cache
