@@ -12,6 +12,10 @@
 #include <sys/epoll.h> // For epoll
 #include <vector> // For epoll_event array and thread vector
 #include <thread> // For std::thread
+#include <chrono> // Required for high_resolution_clock
+#include <ctime>    // For std::time_t, std::tm, std::localtime_r
+#include <iomanip>  // For std::put_time, std::setw, std::setfill
+#include <sstream>  // For std::ostringstream
 
 #define CLOSE_SOCKET close
 #define MAX_EVENTS 64 // Max events to handle in one epoll_wait call
@@ -20,6 +24,44 @@
 const bool LOGGING = true;
 const int PORT = 65432;
 const int BUFFER_SIZE = 1024;
+
+// Function to get the current timestamp in nanoseconds since epoch
+long long get_current_timestamp_ns() {
+    auto now = std::chrono::high_resolution_clock::now();
+    auto duration = now.time_since_epoch();
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+}
+
+// Function to format a timestamp (nanoseconds since epoch) into a human-readable string
+// Example format: YYYY-MM-DD HH:MM:SS.nanoseconds (local time)
+std::string format_timestamp_ns(long long timestamp_ns) {
+    std::chrono::nanoseconds duration_ns(timestamp_ns);
+    std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> tp_ns(duration_ns);
+
+    auto tp_s = std::chrono::time_point_cast<std::chrono::seconds>(tp_ns);
+    auto ns_part = tp_ns - tp_s;
+
+    std::time_t time_t_val = std::chrono::system_clock::to_time_t(tp_s);
+
+    // Convert time_t to struct tm using the thread-safe localtime_r for local time
+    // Use gmtime_r(&time_t_val, &time_info) for UTC time instead
+    std::tm time_info;
+    if (localtime_r(&time_t_val, &time_info) == nullptr) {
+        return "Error formatting time";
+    }
+
+    // Use stringstream and iomanip to format the date and time
+    std::ostringstream oss;
+    // Format: YYYY-MM-DD HH:MM:SS
+    oss << std::put_time(&time_info, "%Y-%m-%d %H:%M:%S");
+    oss << "." << std::setfill('0') << std::setw(9) << ns_part.count();
+    return oss.str();
+}
+
+std::string get_current_time() {
+    long long timestamp_ns = get_current_timestamp_ns();
+    return format_timestamp_ns(timestamp_ns);
+}
 
 // Helper function to print errors and exit
 void error(const char *msg) {
@@ -141,7 +183,7 @@ void worker_loop(int epollfd, int sockfd) {
                     } else {
                         // Data received, echo it back
                         if (LOGGING) {
-                          std::cout << "Received " << n << " bytes from fd " << client_fd << ": " << std::string(buffer, n) << std::endl; // Optional debug
+                          std::cout << "[" << get_current_time() << "]" << " Received " << n << " bytes from fd " << client_fd << ": " << std::string(buffer, n) << std::endl; // Optional debug
                         }
 
                         // Write data back (simple blocking write for now)
@@ -171,7 +213,10 @@ void worker_loop(int epollfd, int sockfd) {
                                 total_written += bytes_written;
                             }
                         }
-                        // std::cout << "Echoed " << total_written << " bytes back to fd " << client_fd << "." << std::endl; // Optional debug
+                        
+                        if (LOGGING) {
+                          std::cout << "[" << get_current_time() << "]" << " Echoed " << n << " bytes back to fd " << client_fd << "." << std::endl; // Optional debug
+                        }
                     }
                 } // End of read loop for this client_fd
             } // End of handling client socket event
@@ -180,10 +225,8 @@ void worker_loop(int epollfd, int sockfd) {
     } // End of main while(true) loop in worker
 }
 
-
 int main() {
     int sockfd;
-    // struct sockaddr_in serv_addr; // Defined within worker or passed if needed
 
     // 1. Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
