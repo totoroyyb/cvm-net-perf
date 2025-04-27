@@ -3,5 +3,13 @@ build
 *.d
 *.mod
 
+*.symvers
+*.ko
+*.o
+*.a
+*.so
+*.order
+*.mod.c
+
 # clangd related files
 .cache
