@@ -1,20 +1,21 @@
 #ifndef SHARED_COMMON_H
 #define SHARED_COMMON_H
 
-#include <linux/ioctl.h>
 
 // Includes for basic types and alignment based on environment
 #ifdef __KERNEL__
     #include <linux/types.h> // u8, u16, u32, u64
     #include <linux/align.h> // __aligned
     #include <linux/stddef.h> // offsetof (potentially)
-    // No <linux/atomic.h> here!
+    #include <linux/ioctl.h>
+
     #define PROF_CACHE_LINE_SIZE 64 // Define for kernel
     #define PROF_CACHE_LINE_ALIGNED __aligned(PROF_CACHE_LINE_SIZE)
     typedef u64 prof_size_t; // Use fixed size for size_t representation
 #else
     #include <stdint.h> // uintN_t types
     #include <stddef.h> // size_t, offsetof
+    #include <sys/ioctl.h>
     #define PROF_CACHE_LINE_SIZE 64 // Define for userspace
     #ifdef __cplusplus
         // C++ includes
@@ -42,7 +43,6 @@ typedef struct {
 #define HIRES_IOCTL_GET_RB_META _IOR(HIRES_IOCTL_MAGIC, 2, hires_rb_meta_t)
 // --- End IOCTL Definitions ---
 
-// Define fixed-size log entry structure using PLAIN types
 typedef struct {
     uint64_t timestamp;
     uint32_t event_id;

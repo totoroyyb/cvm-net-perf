@@ -20,12 +20,17 @@ class HiResConn {
 private:
     int fd_ = -1;                     // File descriptor for /dev/khires
     shared_ring_buffer_t* shm_buf_ = nullptr; // Mapped pointer
-    size_t shm_size_ = 0;             // Size of the mapped region
-    size_t rb_runtime_size_ = 0;      // Size of the ring buffer
-    size_t rb_runtime_mask_ = 0;      // Mask for ring buffer size
+    uint64_t shm_size_ = 0;             // Size of the mapped region
+    uint64_t rb_runtime_size_ = 0;
+    uint64_t rb_runtime_mask_ = 0;
 
     // Helper to get monotonic time
     static uint64_t get_monotonic_ns();
+
+    inline __attribute__((always_inline)) void set_runtime_rb_meta(const hires_rb_meta_t& meta) noexcept {
+        this->rb_runtime_size_ = static_cast<uint64_t>(meta.buffer_size);
+        this->rb_runtime_mask_ = static_cast<uint64_t>(meta.size_mask);
+    }
 
 public:
     /**
@@ -47,6 +52,8 @@ public:
     HiResConn& operator=(const HiResConn&) = delete;
     HiResConn(HiResConn&&) = delete;
     HiResConn& operator=(HiResConn&&) = delete;
+    
+    std::optional<hires_rb_meta_t> get_rb_meta() const noexcept;
 
     /**
      * @brief Logs an event to the shared ring buffer (Userspace Producer Logic).

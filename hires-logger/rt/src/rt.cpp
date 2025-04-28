@@ -1,8 +1,10 @@
-#include <atomic>        // For std::atomic_ref, std::memory_order, std::atomic_thread_fence
-#include <cerrno>        // For errno
+#include <atomic> // For std::atomic_ref, std::memory_order, std::atomic_thread_fence
+#include <cerrno> // For errno
 #include <cstdint>
 #include <cstring>       // For strerror
 #include <fcntl.h>       // For open()
+#include <iostream>
+#include <optional>
 #include <stdexcept>     // For runtime_error
 #include <sys/mman.h>    // For mmap(), munmap()
 #include <sys/syscall.h> // For syscall(SYS_getcpu, ...)
@@ -11,8 +13,8 @@
 #include <time.h>        // For clock_gettime()
 #include <unistd.h>      // For close()
 
-#include "../include/rt.hpp"
 #include "../../shared/common.h"
+#include "../include/rt.hpp"
 
 #if __cplusplus < 202002L
 #error "This code requires C++20 or later for std::atomic_ref"
@@ -43,18 +45,30 @@ HiResConn::HiResConn(const std::string &device_path) {
   }
 
   // 2. Open the device
-  fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC); 
+  fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC);
   if (fd_ == -1) {
     throw_system_error("Failed to open device '" + device_path + "'");
   }
 
+  // ioctl for reading the runtime rb size and mask.
+  auto rb_meta = this->get_rb_meta();
+  if (!rb_meta.has_value()) {
+    throw HiResError(
+        "Failed to get ring buffer metadata from device '" + device_path + "'");
+  }
+  std::cout << "Ring buffer size: " << rb_meta->buffer_size
+            << ", size mask: " << rb_meta->size_mask << std::endl;
+  this->set_runtime_rb_meta(*rb_meta);
+  // use the runtime size for the mmap
+  this->shm_size_ = this->rb_runtime_size_;
+
   // 3. Map the device memory
   void *mapped_ptr =
-      mmap(NULL,                     // Let kernel choose address
-           shm_size_,                // Map the calculated size
-           PROT_READ | PROT_WRITE,   // Read/write access
+      mmap(NULL,                      // Let kernel choose address
+           shm_size_,                 // Map the calculated size
+           PROT_READ | PROT_WRITE,    // Read/write access
            MAP_SHARED | MAP_POPULATE, // Share changes + Hint to pre-fault pages
-           fd_,                      // File descriptor of the device
+           fd_,                       // File descriptor of the device
            0 // Offset within the device memory (must be 0 for char device mmap)
       );
 
@@ -72,8 +86,8 @@ HiResConn::HiResConn(const std::string &device_path) {
   //    Read buffer_size and size_mask ONCE after mapping.
   //    These are written by the kernel during init and don't change,
   //    so no atomicity needed here.
-  // TODO: use ioctl to get the size, as the header size won't match the runtime size
-  // size_t expected_entries = (1UL << RING_BUFFER_LOG2_SIZE); // From header
+  // TODO: use ioctl to get the size, as the header size won't match the runtime
+  // size_t expected_entries = (1UL << RING_BUFFER_LOG2_SIZE);
   // if (shm_buf_->buffer_size != expected_entries ||
   //     shm_buf_->size_mask != (expected_entries - 1)) {
   //   // Handle mismatch - either throw, log warning, or adapt dynamically
@@ -85,11 +99,10 @@ HiResConn::HiResConn(const std::string &device_path) {
   //       "Mapped buffer metadata mismatch. Expected size=" +
   //       std::to_string(expected_entries) +
   //       ", Mapped size=" + std::to_string(shm_buf_->buffer_size));
-  //   // Note: Using shm_buf_->buffer_size read *before* unmap! Better to store first.
+  //   // Note: Using shm_buf_->buffer_size read *before* unmap! Better to store
+  //   // first.
   // }
   // Store the validated size/mask for later use if needed
-  rb_runtime_size_ = shm_buf_->buffer_size;
-  rb_runtime_mask_ = shm_buf_->size_mask;
 }
 
 HiResConn::~HiResConn() {
@@ -107,24 +120,39 @@ HiResConn::~HiResConn() {
   }
 }
 
-bool HiResConn::log(uint32_t event_id, uint64_t data1,
-                                 uint64_t data2) {
+inline __attribute__((always_inline)) std::optional<hires_rb_meta_t> HiResConn::get_rb_meta() const noexcept {
+  long ioctl_ret = 0;
+  hires_rb_meta_t meta;
+  ioctl_ret = ioctl(this->get_fd(), HIRES_IOCTL_GET_RB_META, &meta);
+  if (ioctl_ret < 0) {
+    std::cerr << "ERROR: HIRES_IOCTL_GET_RB_META failed. Error " << errno << ": "
+              << strerror(errno) << std::endl;
+    return std::nullopt;
+  } 
+  return meta;
+}
+
+bool HiResConn::log(uint32_t event_id, uint64_t data1, uint64_t data2) {
   if (shm_buf_ == nullptr) {
     return false; // Not initialized
   }
 
   std::atomic_ref<uint64_t> atomic_head(shm_buf_->head);
-  std::atomic_ref<uint64_t> atomic_tail(shm_buf_->tail); // For checking fullness
-  std::atomic_ref<uint64_t> atomic_dropped(shm_buf_->dropped_count); // For incrementing drops
+  std::atomic_ref<uint64_t> atomic_tail(
+      shm_buf_->tail); // For checking fullness
+  std::atomic_ref<uint64_t> atomic_dropped(
+      shm_buf_->dropped_count); // For incrementing drops
 
-  // Atomically reserve a slot (acquire needed for fetch, release not strictly needed but common)
+  // Atomically reserve a slot (acquire needed for fetch, release not strictly
+  // needed but common)
   //    fetch_add returns the value BEFORE the addition.
   size_t head = atomic_head.fetch_add(1, std::memory_order_acq_rel);
 
   size_t tail = atomic_tail.load(std::memory_order_acquire);
   if ((head - tail) >= get_rb_size()) [[unlikely]] {
     atomic_dropped.fetch_add(1, std::memory_order_relaxed);
-    // Note: Head was already incremented. No explicit rollback needed for this scheme.
+    // Note: Head was already incremented. No explicit rollback needed for this
+    // scheme.
     return false;
   }
 
@@ -160,7 +188,8 @@ bool HiResConn::log(uint32_t event_id, uint64_t data1,
   // Atomically set the flags including the VALID bit (Release semantics)
   //    This makes the entry visible to the consumer.
   std::atomic_ref<uint16_t> atomic_flags(entry->flags);
-  uint16_t initial_flags = 0; // Userspace origin, VALID bit will be added by store
+  uint16_t initial_flags =
+      0; // Userspace origin, VALID bit will be added by store
   atomic_flags.store(initial_flags | LOG_FLAG_VALID, std::memory_order_release);
 
   return true; // Success
@@ -168,7 +197,7 @@ bool HiResConn::log(uint32_t event_id, uint64_t data1,
 
 std::optional<log_entry_t> HiResConn::pop() {
   if (shm_buf_ == nullptr) {
-      return std::nullopt; // Not initialized
+    return std::nullopt; // Not initialized
   }
 
   std::atomic_ref<uint64_t> atomic_head(shm_buf_->head);
@@ -181,7 +210,7 @@ std::optional<log_entry_t> HiResConn::pop() {
   //    Ensures we see producer writes that happened *before* head was updated.
   size_t head = atomic_head.load(std::memory_order_acquire);
   if (tail == head) {
-      return std::nullopt; // Buffer is empty
+    return std::nullopt; // Buffer is empty
   }
 
   // 3. Calculate index and get entry pointer
@@ -195,24 +224,26 @@ std::optional<log_entry_t> HiResConn::pop() {
   constexpr int max_spins = 100; // Limit spinning
   int spin_count = 0;
   while ((atomic_flags.load(std::memory_order_acquire) & LOG_FLAG_VALID) == 0) {
-      if (++spin_count > max_spins) {
-           // Entry wasn't ready quickly enough, maybe producer is slow or stuck.
-           // Return nullopt to allow caller to decide how to handle (e.g., retry later).
-           return std::nullopt;
-      }
-      std::this_thread::yield();
+    if (++spin_count > max_spins) {
+      // Entry wasn't ready quickly enough, maybe producer is slow or stuck.
+      // Return nullopt to allow caller to decide how to handle (e.g., retry
+      // later).
+      return std::nullopt;
+    }
+    std::this_thread::yield();
   }
 
   // 5. Read data (Entry is valid and ready)
-  //    Perform a simple copy. Volatile isn't strictly needed due to atomics/fences.
+  //    Perform a simple copy. Volatile isn't strictly needed due to
+  //    atomics/fences.
   log_entry_t result_entry = *entry; // Direct struct copy
 
   // 6. Optional: Clear the VALID flag (Relaxed store is sufficient)
   //    This helps debugging and potentially some producer logic variants.
   //    Read current flags first to preserve other bits (like KERNEL flag).
   uint16_t current_flags = atomic_flags.load(std::memory_order_relaxed);
-  atomic_flags.store(current_flags & ~LOG_FLAG_VALID, std::memory_order_relaxed);
-
+  atomic_flags.store(current_flags & ~LOG_FLAG_VALID,
+                     std::memory_order_relaxed);
 
   // 7. Advance tail (Release semantics)
   //    Make the slot available for producers *after* we've finished reading.
@@ -222,4 +253,4 @@ std::optional<log_entry_t> HiResConn::pop() {
   // 8. Return the copied data
   return result_entry;
 }
-} // namespace Profiler
+} // namespace HiResLogger
