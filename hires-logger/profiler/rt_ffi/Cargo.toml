@@ -8,4 +8,4 @@ build = "build.rs"
 libc = "0.2" # Often needed for FFI types if not using core::ffi exclusively
 
 [build-dependencies]
-# bindgen = "0.66" # Uncomment if using bindgen in build.rs
+bindgen = "0.71.0"

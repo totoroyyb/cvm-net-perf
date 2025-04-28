@@ -1,80 +1,84 @@
 //! Safe Rust wrapper around the profiler_rt_sys FFI bindings.
 
-use profiler_rt_sys as ffi; // Use the raw bindings crate
+use rt_ffi as ffi; // Use the raw bindings crate
 use std::ffi::{CStr, CString};
+use std::fmt;
 use std::marker::PhantomData;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, AtomicU64, Ordering}; // For accessing shared buffer atomics
 use std::ptr;
-use std::fmt;
 
 // Re-export shared types for convenience, ensuring they match FFI defs
-pub use ffi::{log_entry_t, shared_ring_buffer_t, LOG_FLAG_VALID, LOG_FLAG_KERNEL};
-
+pub use ffi::{LOG_FLAG_KERNEL, LOG_FLAG_VALID, log_entry_t, shared_ring_buffer_t};
 
 // --- Error Handling ---
 #[derive(Debug)]
-pub struct ProfilerError {
+pub struct HiResError {
     message: String,
 }
 
-impl std::error::Error for ProfilerError {}
+impl std::error::Error for HiResError {}
 
-impl fmt::Display for ProfilerError {
+impl fmt::Display for HiResError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Profiler runtime error: {}", self.message)
+        write!(f, "HiResLogger runtime error: {}", self.message)
     }
 }
 
 // Helper to check for errors from the C API
-fn check_error() -> Result<(), ProfilerError> {
-    let err_ptr = unsafe { ffi::profiler_get_last_error() };
+fn check_error() -> Result<(), HiResError> {
+    let err_ptr = unsafe { ffi::hires_get_last_error() };
     if err_ptr.is_null() {
         Ok(())
     } else {
         let err_cstr = unsafe { CStr::from_ptr(err_ptr) };
-        Err(ProfilerError {
+        Err(HiResError {
             message: err_cstr.to_string_lossy().into_owned(),
         })
     }
 }
 
-
 // --- Safe Wrapper Struct ---
 /// Represents a connection to the profiler device.
 /// Manages the lifetime of the underlying C handle using RAII.
-pub struct ProfilerConnection<'a> {
-    handle: *mut ffi::ProfilerConnectionHandle,
+pub struct HiResConn<'a> {
+    handle: *mut ffi::HiResLoggerConnHandle,
     // Use PhantomData to indicate lifetime relationship if buffer access is tied
     // to the connection's lifetime, although the buffer itself is static memory.
     // Not strictly needed here as get_buffer returns a raw pointer.
     _marker: PhantomData<&'a ()>,
 }
 
-impl<'a> ProfilerConnection<'a> {
+impl<'a> HiResConn<'a> {
     /// Connects to the profiler device.
     ///
     /// # Arguments
-    /// * `device_path` - Optional path to the device node (e.g., "/dev/profiler_buf").
+    /// * `device_path` - Optional path to the device node (e.g., "/dev/khires").
     ///                   Uses default if None.
     ///
     /// # Errors
     /// Returns `ProfilerError` if connection fails.
-    pub fn connect(device_path: Option<&Path>) -> Result<Self, ProfilerError> {
+    pub fn connect(device_path: Option<&Path>) -> Result<Self, HiResError> {
         let path_cstr = device_path
             .map(|p| CString::new(p.to_string_lossy().as_bytes()))
             .transpose()
-            .map_err(|e| ProfilerError { message: format!("Invalid device path: {}", e) })?;
+            .map_err(|e| HiResError {
+                message: format!("Invalid device path: {}", e),
+            })?;
 
         let c_path_ptr = path_cstr.as_ref().map_or(ptr::null(), |cs| cs.as_ptr());
 
-        let handle = unsafe { ffi::profiler_connect(c_path_ptr) };
+        let handle = unsafe { ffi::hires_connect(c_path_ptr) };
         if handle.is_null() {
             check_error()?; // Check error if handle is null
             // If check_error didn't return Err, something unexpected happened
-            Err(ProfilerError { message: "profiler_connect returned null without setting error".to_string() })
+            Err(HiResError {
+                message: "profiler_connect returned null without setting error".to_string(),
+            })
         } else {
-            Ok(ProfilerConnection { handle, _marker: PhantomData })
+            Ok(HiResConn {
+                handle,
+                _marker: PhantomData,
+            })
         }
     }
 
@@ -88,10 +92,39 @@ impl<'a> ProfilerConnection<'a> {
     /// # Returns
     /// `true` if the event was logged successfully.
     /// `false` if the buffer was full and the event was dropped.
+    #[inline]
     pub fn log(&self, event_id: u32, data1: u64, data2: u64) -> bool {
-        if self.handle.is_null() { return false; } // Should not happen with RAII wrapper
-        unsafe { ffi::profiler_log(self.handle, event_id, data1, data2) }
+        if self.handle.is_null() {
+            return false;
+        } // Should not happen with RAII wrapper
+        unsafe { ffi::hires_log(self.handle, event_id, data1, data2) }
         // Note: We don't check error here, as false return indicates buffer full, not API error.
+    }
+
+    #[inline]
+    pub fn pop(&self) -> Option<log_entry_t> {
+        if self.handle.is_null() {
+            return None;
+        }
+        let mut entry = log_entry_t::default();
+        let result = unsafe { ffi::hires_pop(self.handle, &mut entry) };
+        if result { Some(entry) } else { None }
+    }
+
+    #[inline]
+    pub fn get_rb_size(&self) -> u64 {
+        if self.handle.is_null() {
+            return 0;
+        }
+        return unsafe { ffi::hires_get_rb_size(self.handle) as u64 };
+    }
+
+    #[inline]
+    pub fn get_rb_mask(&self) -> u64 {
+        if self.handle.is_null() {
+            return 0;
+        }
+        return unsafe { ffi::hires_get_rb_mask(self.handle) as u64 };
     }
 
     /// Gets a raw pointer to the underlying shared memory buffer structure.
@@ -102,73 +135,31 @@ impl<'a> ProfilerConnection<'a> {
     /// or writing fields, especially `head`, `tail`, `dropped_count`, and
     /// individual `log_entry_t` flags and data, according to the MPSC protocol.
     /// The pointer is valid as long as this `ProfilerConnection` object exists.
+    #[inline]
     pub unsafe fn get_raw_buffer(&self) -> *mut shared_ring_buffer_t {
-        if self.handle.is_null() { return ptr::null_mut(); }
-        ffi::profiler_get_buffer(self.handle)
+        if self.handle.is_null() {
+            return ptr::null_mut();
+        }
+        unsafe { ffi::hires_get_buffer(self.handle) }
     }
 
-     /// Gets the size of the mapped shared memory region.
-     pub fn get_buffer_size(&self) -> usize {
-         if self.handle.is_null() { return 0; }
-         unsafe { ffi::profiler_get_buffer_size(self.handle) }
-     }
+    /// Gets the size of the mapped shared memory region.
+    #[inline]
+    pub fn get_buffer_size(&self) -> u64 {
+        if self.handle.is_null() {
+            return 0;
+        }
+        unsafe { ffi::hires_get_buffer_size(self.handle) as u64 }
+    }
 
     // --- Consumer-specific helpers (could be in a separate Consumer struct) ---
-
-    /// Reads the current value of the head pointer atomically.
-    /// Uses Acquire ordering to ensure visibility of producer writes.
-    ///
-    /// # Safety
-    /// Requires a valid buffer pointer obtained from `get_raw_buffer`.
-    pub unsafe fn read_head_acquire(buffer: *mut shared_ring_buffer_t) -> usize {
-        // Assuming shared_ring_buffer_t::head is compatible with AtomicUsize
-        (*buffer).head.load(Ordering::Acquire)
-    }
-
-    /// Reads the current value of the tail pointer atomically.
-    /// Uses Relaxed ordering as only the consumer modifies tail.
-    ///
-    /// # Safety
-    /// Requires a valid buffer pointer obtained from `get_raw_buffer`.
-     pub unsafe fn read_tail_relaxed(buffer: *mut shared_ring_buffer_t) -> usize {
-        (*buffer).tail.load(Ordering::Relaxed)
-    }
-
-    /// Writes a new value to the tail pointer atomically.
-    /// Uses Release ordering to make consumed space visible to producers.
-    ///
-    /// # Safety
-    /// Requires a valid buffer pointer obtained from `get_raw_buffer`.
-    /// Only the single consumer should ever call this.
-    pub unsafe fn write_tail_release(buffer: *mut shared_ring_buffer_t, value: usize) {
-         (*buffer).tail.store(value, Ordering::Release);
-    }
-
-    /// Reads the flags of a log entry atomically.
-    /// Uses Acquire ordering to ensure visibility of producer data writes before the VALID flag.
-    ///
-    /// # Safety
-    /// Requires a valid pointer to a `log_entry_t` within the buffer.
-    pub unsafe fn read_flags_acquire(entry: *const log_entry_t) -> u16 {
-        // Assuming log_entry_t::flags is compatible with AtomicU16
-        (*(entry as *const std::sync::atomic::AtomicU16)).load(Ordering::Acquire)
-    }
-
-     /// Reads the dropped count atomically.
-     /// Uses Relaxed ordering, as exact timing isn't usually critical.
-     ///
-     /// # Safety
-     /// Requires a valid buffer pointer obtained from `get_raw_buffer`.
-     pub unsafe fn read_dropped_count_relaxed(buffer: *mut shared_ring_buffer_t) -> u64 {
-         (*buffer).dropped_count.load(Ordering::Relaxed)
-     }
 }
 
 // Implement Drop to automatically call profiler_disconnect
-impl<'a> Drop for ProfilerConnection<'a> {
+impl<'a> Drop for HiResConn<'a> {
     fn drop(&mut self) {
         if !self.handle.is_null() {
-            unsafe { ffi::profiler_disconnect(self.handle) };
+            unsafe { ffi::hires_disconnect(self.handle) };
             self.handle = ptr::null_mut(); // Prevent double free
         }
     }
@@ -177,5 +168,5 @@ impl<'a> Drop for ProfilerConnection<'a> {
 // Implement Send/Sync if the handle itself is thread-safe (depends on C++ lib's internals)
 // Assuming the C++ object itself doesn't have hidden thread-unsafe state,
 // and operations like log() are atomic w.r.t the shared buffer, it should be safe.
-unsafe impl<'a> Send for ProfilerConnection<'a> {}
-unsafe impl<'a> Sync for ProfilerConnection<'a> {}
+unsafe impl<'a> Send for HiResConn<'a> {}
+unsafe impl<'a> Sync for HiResConn<'a> {}
