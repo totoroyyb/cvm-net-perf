@@ -42,6 +42,16 @@ void hires_disconnect(HiResLoggerConnHandle* handle);
 bool hires_log(HiResLoggerConnHandle* handle, uint32_t event_id, uint64_t data1, uint64_t data2);
 
 /**
+ * @brief Attempts to pop one log entry from the buffer using the provided handle.
+ * @param handle The handle returned by hires_connect. Must not be NULL.
+ * @param entry Pointer to a log_entry_t structure where the popped entry will be copied. Must not be NULL.
+ * @return True if an entry was successfully popped and copied, false if the buffer
+ * was empty, the entry wasn't ready, or if the handle/entry pointer is invalid.
+ * Call hires_get_last_error() for details on failure.
+ */
+bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry);
+
+/**
  * @brief Gets a raw pointer to the shared ring buffer structure.
  * Use with extreme caution. Allows direct manipulation/reading of the buffer.
  * @param handle The handle returned by profiler_connect. Must not be NULL.

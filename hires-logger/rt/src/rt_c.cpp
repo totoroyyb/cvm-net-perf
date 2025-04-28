@@ -79,6 +79,38 @@ bool hires_log(HiResLoggerConnHandle* handle, uint32_t event_id, uint64_t data1,
     }
 }
 
+bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
+    set_last_error(""); // Clear last error
+    if (handle == nullptr) {
+        set_last_error("Invalid handle passed to hires_pop");
+        return false;
+    }
+    if (entry == nullptr) {
+        set_last_error("NULL entry pointer passed to hires_pop");
+        return false;
+    }
+
+    HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
+    try {
+        std::optional<log_entry_t> result = conn->pop();
+        if (result.has_value()) {
+            *entry = result.value(); // Copy the popped entry
+            return true;
+        } else {
+            // Buffer might be empty or entry wasn't ready, not necessarily an error state
+            // set_last_error("Buffer empty or entry not ready"); // Optional: set error if needed
+            return false;
+        }
+    } catch (const std::exception& e) {
+        set_last_error(std::string("Exception during pop: ") + e.what());
+        return false;
+    } catch (...) {
+         set_last_error("Unknown exception during pop");
+        return false;
+    }
+}
+
+
 shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
