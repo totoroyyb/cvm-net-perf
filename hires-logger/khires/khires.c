@@ -41,6 +41,8 @@ static struct page **buffer_pages = NULL; // Array holding buffer pages
 static int hireslogger_dev_open(struct inode *, struct file *);
 static int hireslogger_dev_release(struct inode *, struct file *);
 static int hireslogger_dev_mmap(struct file *filp, struct vm_area_struct *vma);
+static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
+                                  unsigned long arg);
 int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2);
 
 // --- File Operations ---
@@ -49,7 +51,7 @@ static const struct file_operations fops = {
     .open = hireslogger_dev_open,
     .release = hireslogger_dev_release,
     .mmap = hireslogger_dev_mmap,
-    // .unlocked_ioctl = profiler_dev_ioctl, // Add if ioctl is needed
+    .unlocked_ioctl = hireslogger_dev_ioctl,
 };
 
 // --- Mmap Helper Functions (using alloc_pages) ---
@@ -108,6 +110,71 @@ static int hireslogger_dev_mmap(struct file *filp, struct vm_area_struct *vma) {
 
   pr_info("kHiResLogger: mmap successful using page fault handler.\n");
   return 0;
+}
+
+// --- IOCTL Handler ---
+static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
+                                  unsigned long arg) {
+  int ret = 0;
+  prof_size_t i; // Use the correct type for buffer indices
+
+  // Check if the shared buffer is initialized
+  if (unlikely(!READ_ONCE(shared_buffer))) {
+    pr_warn("kHiResLogger: IOCTL called before buffer initialization.\n");
+    return -EIO;
+  }
+
+  switch (cmd) {
+  case HIRES_IOCTL_RESET_RB:
+    pr_info("kHiResLogger: IOCTL: Resetting buffer.\n");
+
+    // Atomically reset head, tail, and dropped count
+    atomic64_set((atomic64_t *)&shared_buffer->head, 0);
+    atomic64_set((atomic64_t *)&shared_buffer->tail, 0);
+    atomic64_set((atomic64_t *)&shared_buffer->dropped_count, 0);
+
+    smp_wmb();
+
+    // Clear the VALID flag for all entries to prevent stale reads
+    // This might contend with producers, but reset is usually infrequent.
+    // A more complex scheme could involve a generation count.
+    for (i = 0; i < shared_buffer->buffer_size; ++i) {
+      uint16_t old_flags, new_flags;
+      log_entry_t *entry = &shared_buffer->buffer[i];
+      do {
+        old_flags = READ_ONCE(entry->flags);
+        new_flags = old_flags & ~LOG_FLAG_VALID;
+      } while (cmpxchg(&entry->flags, old_flags, new_flags) != old_flags);
+    }
+    smp_wmb();
+    ret = 0;
+    break;
+
+  case HIRES_IOCTL_GET_RB_META: {
+    hires_rb_meta_t meta;
+    void __user *user_ptr = (void __user *)arg;
+
+    pr_info("kHiResLogger: IOCTL: Get buffer info.\n");
+
+    meta.buffer_size = READ_ONCE(shared_buffer->buffer_size);
+    meta.size_mask = READ_ONCE(shared_buffer->size_mask);
+
+    if (copy_to_user(user_ptr, &meta, sizeof(meta))) {
+      pr_err("kHiResLogger: IOCTL: Failed to copy buffer info to user.\n");
+      ret = -EFAULT;
+    } else {
+      ret = 0;
+    }
+    break;
+  }
+
+  default:
+    pr_warn("kHiResLogger: IOCTL: Unknown command %u.\n", cmd);
+    ret = -ENOTTY;
+    break;
+  }
+
+  return ret;
 }
 
 // --- Kernel Producer Logging API ---

@@ -1,6 +1,8 @@
 #ifndef SHARED_COMMON_H
 #define SHARED_COMMON_H
 
+#include <linux/ioctl.h>
+
 // Includes for basic types and alignment based on environment
 #ifdef __KERNEL__
     #include <linux/types.h> // u8, u16, u32, u64
@@ -28,6 +30,17 @@
     #endif // __cplusplus
     typedef uint64_t prof_size_t; // Use standard size_t for userspace
 #endif // __KERNEL__
+
+// --- IOCTL Definitions ---
+typedef struct {
+    prof_size_t buffer_size; // Actual number of entries
+    prof_size_t size_mask;   // Mask (buffer_size - 1)
+} hires_rb_meta_t;
+
+#define HIRES_IOCTL_MAGIC 'h'
+#define HIRES_IOCTL_RESET_RB _IO(HIRES_IOCTL_MAGIC, 1)
+#define HIRES_IOCTL_GET_RB_META _IOR(HIRES_IOCTL_MAGIC, 2, hires_rb_meta_t)
+// --- End IOCTL Definitions ---
 
 // Define fixed-size log entry structure using PLAIN types
 typedef struct {
