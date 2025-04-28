@@ -80,7 +80,6 @@ static const struct vm_operations_struct hireslogger_vm_ops = {
 
 // --- Device Operations Implementation ---
 static int hireslogger_dev_open(struct inode *inodep, struct file *filep) {
-  // Could track number of openers if needed
   pr_info("kHiResLogger: Device opened.\n");
   return 0;
 }
@@ -431,7 +430,7 @@ module_init(hireslogger_km_init);
 module_exit(hireslogger_km_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Yibo Yan (Modified by AI)");
+MODULE_AUTHOR("Yibo Yan");
 MODULE_DESCRIPTION(
-    "HiResLogger Kernel Module with MPSC Ring Buffer via mmap (Plain Types)");
-MODULE_VERSION("0.2");
+    "HiResLogger Kernel Module with MPSC Ring Buffer via mmap");
+MODULE_VERSION("0.1");
