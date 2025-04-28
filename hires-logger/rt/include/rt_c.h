@@ -66,6 +66,9 @@ shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle);
  */
 size_t hires_get_buffer_size(HiResLoggerConnHandle* handle);
 
+size_t hires_get_rb_size(HiResLoggerConnHandle* handle);
+size_t hires_get_rb_mask(HiResLoggerConnHandle* handle);
+
 /**
  * @brief Gets the last error message encountered by the API functions for the current thread.
  * Note: This is a simple thread-local error reporting mechanism. Not robust for
@@ -75,7 +78,6 @@ size_t hires_get_buffer_size(HiResLoggerConnHandle* handle);
  * until the next API call in the same thread that might generate an error.
  */
 const char* hires_get_last_error(void);
-
 
 #ifdef __cplusplus
 } // extern "C"

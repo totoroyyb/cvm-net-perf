@@ -1,5 +1,6 @@
 #include "../include/rt_c.h"
 #include "../include/rt.hpp"
+#include <cstddef>
 #include <string>
 #include <vector> // Could use vector for thread-local storage if needed
 
@@ -79,7 +80,7 @@ bool hires_log(HiResLoggerConnHandle* handle, uint32_t event_id, uint64_t data1,
     }
 }
 
-bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
+inline bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to hires_pop");
@@ -110,8 +111,7 @@ bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
     }
 }
 
-
-shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
+inline shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_buffer");
@@ -121,7 +121,7 @@ shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
     return conn->get_raw_buf();
 }
 
-size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
+inline size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
      if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_buffer_size");
@@ -131,5 +131,24 @@ size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
     return conn->get_mapped_size();
 }
 
+inline size_t hires_get_rb_size(HiResLoggerConnHandle* handle) {
+    set_last_error(""); // Clear last error
+    if (handle == nullptr) {
+        set_last_error("Invalid handle passed to profiler_get_rb_size");
+        return 0;
+    }
+    HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
+    return conn->get_rb_size();
+}
+
+inline size_t hires_get_rb_mask(HiResLoggerConnHandle* handle) {
+    set_last_error(""); // Clear last error
+    if (handle == nullptr) {
+        set_last_error("Invalid handle passed to profiler_get_rb_mask");
+        return 0;
+    }
+    HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
+    return conn->get_rb_mask();
+}
 
 } // extern "C"
