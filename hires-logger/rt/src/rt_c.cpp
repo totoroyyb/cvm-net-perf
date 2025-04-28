@@ -80,7 +80,7 @@ bool hires_log(HiResLoggerConnHandle* handle, uint32_t event_id, uint64_t data1,
     }
 }
 
-inline bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
+bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to hires_pop");
@@ -111,7 +111,7 @@ inline bool hires_pop(HiResLoggerConnHandle* handle, log_entry_t* entry) {
     }
 }
 
-inline shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
+shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_buffer");
@@ -121,7 +121,7 @@ inline shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
     return conn->get_raw_buf();
 }
 
-inline size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
+size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
      if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_buffer_size");
@@ -131,7 +131,7 @@ inline size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
     return conn->get_mapped_size();
 }
 
-inline size_t hires_get_rb_size(HiResLoggerConnHandle* handle) {
+size_t hires_get_rb_size(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_rb_size");
@@ -141,7 +141,7 @@ inline size_t hires_get_rb_size(HiResLoggerConnHandle* handle) {
     return conn->get_rb_size();
 }
 
-inline size_t hires_get_rb_mask(HiResLoggerConnHandle* handle) {
+size_t hires_get_rb_mask(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_rb_mask");
