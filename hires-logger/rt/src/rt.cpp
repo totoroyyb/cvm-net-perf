@@ -1,6 +1,3 @@
-#include "../include/rt.hpp"    // Your application's header
-#include "../../shared/common.h" // Shared header with PLAIN types
-
 #include <atomic>        // For std::atomic_ref, std::memory_order, std::atomic_thread_fence
 #include <cerrno>        // For errno
 #include <cstring>       // For strerror
@@ -13,20 +10,20 @@
 #include <time.h>        // For clock_gettime()
 #include <unistd.h>      // For close()
 
+#include "../include/rt.hpp"
+#include "../../shared/common.h"
+
 #if __cplusplus < 202002L
 #error "This code requires C++20 or later for std::atomic_ref"
 #endif
 
-namespace Profiler {
+namespace HiResLogger {
 
-// --- ProfilerConnection Implementation ---
-
-// Helper to throw std::system_error with errno
 [[noreturn]] void throw_system_error(const std::string &context) {
   throw std::system_error(errno, std::system_category(), context);
 }
 
-uint64_t ProfilerConnection::get_monotonic_ns() {
+uint64_t HiResConn::get_monotonic_ns() {
   struct timespec ts;
   if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
     // Use system_error for better exception handling
@@ -36,16 +33,16 @@ uint64_t ProfilerConnection::get_monotonic_ns() {
          static_cast<uint64_t>(ts.tv_nsec);
 }
 
-ProfilerConnection::ProfilerConnection(const std::string &device_path) {
+HiResConn::HiResConn(const std::string &device_path) {
   // 1. Use the size calculation macro from the shared header
   //    This ensures consistency with the kernel module's allocation.
   shm_size_ = SHARED_RING_BUFFER_TOTAL_SIZE;
   if (shm_size_ < sizeof(shared_ring_buffer_t)) { // Basic sanity check
-    throw ProfilerError("Invalid shared buffer size macro definition");
+    throw HiResError("Invalid shared buffer size macro definition");
   }
 
   // 2. Open the device
-  fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC); // Use O_CLOEXEC
+  fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC); 
   if (fd_ == -1) {
     throw_system_error("Failed to open device '" + device_path + "'");
   }
@@ -62,13 +59,12 @@ ProfilerConnection::ProfilerConnection(const std::string &device_path) {
 
   if (mapped_ptr == MAP_FAILED) {
     int saved_errno = errno; // Save errno before close() might change it
-    close(fd_);              // Clean up fd before throwing
+    close(fd_);
     fd_ = -1;
     errno = saved_errno; // Restore errno for throw_system_error
     throw_system_error("Failed to mmap device '" + device_path + "'");
   }
 
-  // Cast the mapped pointer to our shared struct type
   shm_buf_ = static_cast<shared_ring_buffer_t *>(mapped_ptr);
 
   // 4. Optional but Recommended: Sanity check mapped buffer metadata
@@ -83,7 +79,7 @@ ProfilerConnection::ProfilerConnection(const std::string &device_path) {
     close(fd_);                  // Clean up fd
     fd_ = -1;
     shm_buf_ = nullptr;
-    throw ProfilerError(
+    throw HiResError(
         "Mapped buffer metadata mismatch. Expected size=" +
         std::to_string(expected_entries) +
         ", Mapped size=" + std::to_string(shm_buf_->buffer_size));
@@ -94,53 +90,46 @@ ProfilerConnection::ProfilerConnection(const std::string &device_path) {
   rb_runtime_mask_ = shm_buf_->size_mask;
 }
 
-ProfilerConnection::~ProfilerConnection() {
+HiResConn::~HiResConn() {
   if (shm_buf_ != nullptr) {
     if (munmap(shm_buf_, shm_size_) == -1) {
-      // Log error, but can't do much else in destructor
-      fprintf(stderr, "ProfilerRT: munmap failed: %s\n", strerror(errno));
+      fprintf(stderr, "HiResLoggerRT: munmap failed: %s\n", strerror(errno));
     }
     shm_buf_ = nullptr;
   }
   if (fd_ != -1) {
     if (close(fd_) == -1) {
-      fprintf(stderr, "ProfilerRT: close failed: %s\n", strerror(errno));
+      fprintf(stderr, "HiResLoggerRT: close failed: %s\n", strerror(errno));
     }
     fd_ = -1;
   }
 }
 
-bool ProfilerConnection::log(uint32_t event_id, uint64_t data1,
+bool HiResConn::log(uint32_t event_id, uint64_t data1,
                                  uint64_t data2) {
   if (shm_buf_ == nullptr) {
     return false; // Not initialized
   }
 
-  // --- Use std::atomic_ref for atomic operations on plain members ---
   std::atomic_ref<prof_size_t> atomic_head(shm_buf_->head);
   std::atomic_ref<prof_size_t> atomic_tail(shm_buf_->tail); // For checking fullness
   std::atomic_ref<uint64_t> atomic_dropped(shm_buf_->dropped_count); // For incrementing drops
 
-  // 1. Atomically reserve a slot (acquire needed for fetch, release not strictly needed but common)
+  // Atomically reserve a slot (acquire needed for fetch, release not strictly needed but common)
   //    fetch_add returns the value BEFORE the addition.
   size_t head = atomic_head.fetch_add(1, std::memory_order_acq_rel);
   size_t current_idx = head & rb_runtime_mask_; // Use validated mask
 
-  // 2. Check if buffer is full (acquire needed for tail read)
-  //    Compare how far head is ahead of tail.
   size_t tail = atomic_tail.load(std::memory_order_acquire);
-  // Use the validated runtime size
   if ((head - tail) >= rb_runtime_size_) [[unlikely]] {
-    // Buffer is full
-    atomic_dropped.fetch_add(1, std::memory_order_relaxed); // Relaxed is fine for simple counter
+    atomic_dropped.fetch_add(1, std::memory_order_relaxed);
     // Note: Head was already incremented. No explicit rollback needed for this scheme.
-    return false; // Indicate drop
+    return false;
   }
 
-  // 3. Get pointer to the entry
   log_entry_t *entry = &shm_buf_->buffer[current_idx];
 
-  // 4. Fill data (flags are handled atomically below)
+  // Fill data (flags are handled atomically below)
   //    Direct writes to plain members are fine before the release operation.
   entry->timestamp = get_monotonic_ns();
   entry->event_id = event_id;
@@ -149,12 +138,11 @@ bool ProfilerConnection::log(uint32_t event_id, uint64_t data1,
   unsigned cpu = 0, node = 0; // Cache cpu/node info if needed for performance
 #ifdef SYS_getcpu
   if (syscall(SYS_getcpu, &cpu, &node, NULL) == -1) {
-    cpu = 0xFFFF; // Indicate error
+    cpu = 0xFFFF; // error
   }
 #else
-  // Note: sched_getcpu() might be less efficient than the syscall
   cpu = sched_getcpu();
-  if (cpu < 0) { // Check for error from sched_getcpu
+  if (cpu < 0) {
     cpu = 0xFFFF;
   }
 #endif
@@ -162,12 +150,12 @@ bool ProfilerConnection::log(uint32_t event_id, uint64_t data1,
   entry->data1 = data1;
   entry->data2 = data2;
 
-  // 5. Release Operations: Ensure prior writes are visible before VALID flag
+  // Release Operations: Ensure prior writes are visible before VALID flag
   //    Option A: Use atomic_thread_fence (explicit fence)
   // std::atomic_thread_fence(std::memory_order_release);
   //    Option B: Rely on the release semantics of the atomic store below
 
-  // 6. Atomically set the flags including the VALID bit (Release semantics)
+  // Atomically set the flags including the VALID bit (Release semantics)
   //    This makes the entry visible to the consumer.
   std::atomic_ref<uint16_t> atomic_flags(entry->flags);
   uint16_t initial_flags = 0; // Userspace origin, VALID bit will be added by store

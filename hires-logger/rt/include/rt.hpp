@@ -8,23 +8,16 @@
 
 #include "../../shared/common.h"
 
-// Forward declare the shared struct (avoids pulling the whole C header into C++ header)
-// Or include it directly if preferred, but forward declaration is cleaner interface.
-// struct shared_ring_buffer_t; // Defined in shared_profiler_data.h
-// struct log_entry_t;          // Defined in shared_profiler_data.h
+namespace HiResLogger {
 
-namespace Profiler {
-
-// Exception class for runtime errors
-class ProfilerError : public std::runtime_error {
+class HiResError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
 
-
-class ProfilerConnection {
+class HiResConn {
 private:
-    int fd_ = -1;                     // File descriptor for /dev/profiler_buf
+    int fd_ = -1;                     // File descriptor for /dev/khires
     shared_ring_buffer_t* shm_buf_ = nullptr; // Mapped pointer
     size_t shm_size_ = 0;             // Size of the mapped region
     size_t rb_runtime_size_ = 0;      // Size of the ring buffer
@@ -36,23 +29,23 @@ private:
 public:
     /**
      * @brief Constructs a connection, opening and mmapping the device.
-     * @param device_path Path to the profiler character device.
-     * @throws ProfilerError if opening or mmapping fails.
+     * @param device_path Path to the HiResLogger character device.
+     * @throws HiResError if opening or mmapping fails.
      */
-    explicit ProfilerConnection(const std::string& device_path = "/dev/profiler_buf");
+    explicit HiResConn(const std::string& device_path = "/dev/khires");
 
     /**
      * @brief Destructor, automatically unmaps and closes the device.
      */
-    ~ProfilerConnection();
+    ~HiResConn();
 
     // --- Rule of Five: Disable copy/move for simplicity ---
     // Prevent accidental copying or moving which would mess up resource management.
     // Could be implemented properly if needed, but deletion is safer for now.
-    ProfilerConnection(const ProfilerConnection&) = delete;
-    ProfilerConnection& operator=(const ProfilerConnection&) = delete;
-    ProfilerConnection(ProfilerConnection&&) = delete;
-    ProfilerConnection& operator=(ProfilerConnection&&) = delete;
+    HiResConn(const HiResConn&) = delete;
+    HiResConn& operator=(const HiResConn&) = delete;
+    HiResConn(HiResConn&&) = delete;
+    HiResConn& operator=(HiResConn&&) = delete;
 
     /**
      * @brief Logs an event to the shared ring buffer (Userspace Producer Logic).
@@ -68,7 +61,7 @@ public:
      * Use with caution. Primarily intended for the consumer or advanced usage.
      * @return Pointer to the shared_ring_buffer_t, or nullptr if not connected.
      */
-    shared_ring_buffer_t* getRawBuffer() const noexcept {
+    inline __attribute__((always_inline)) shared_ring_buffer_t* get_raw_buf() const noexcept {
         return shm_buf_;
     }
 
@@ -76,7 +69,7 @@ public:
      * @brief Gets the size of the mapped shared memory region.
      * @return Size in bytes.
      */
-    size_t getMappedSize() const noexcept {
+    inline __attribute__((always_inline)) size_t get_mapped_size() const noexcept {
         return shm_size_;
     }
 
@@ -84,7 +77,7 @@ public:
      * @brief Gets the file descriptor of the opened device.
      * @return The file descriptor, or -1 if not connected.
      */
-    int getFileDescriptor() const noexcept {
+    inline __attribute__((always_inline)) int get_fd() const noexcept {
         return fd_;
     }
 };

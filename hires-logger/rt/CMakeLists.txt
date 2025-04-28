@@ -11,14 +11,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Create a shared library (libhireslogger.so)
 add_library(hireslogger SHARED
     src/rt.cpp
-    src/c_api.cpp
+    src/rt_c.cpp
 )
 
 # Specify include directories
 target_include_directories(hireslogger PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> # For internal includes
     $<INSTALL_INTERFACE:include> # For installation
-    # Also need access to the shared C header
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../shared>
 )
 
@@ -29,7 +28,7 @@ target_link_libraries(hireslogger PRIVATE pthread rt) # TODO: considering remove
 set_target_properties(hireslogger PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 0 # Major API version
-    PUBLIC_HEADER "include/rt.hpp;include/c_api.h"
+    PUBLIC_HEADER "include/rt.hpp;include/rt_c.h"
 )
 
 # --- Installation ---
