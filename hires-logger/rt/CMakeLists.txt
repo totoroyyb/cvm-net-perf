@@ -9,23 +9,23 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # --- Library Target ---
 # Create a shared library (libhireslogger.so)
-add_library(hireslogger SHARED
+add_library(hires_rt SHARED
     src/rt.cpp
     src/rt_c.cpp
 )
 
 # Specify include directories
-target_include_directories(hireslogger PUBLIC
+target_include_directories(hires_rt PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> # For internal includes
     $<INSTALL_INTERFACE:include> # For installation
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../shared>
 )
 
 # Link dependencies (pthread for thread_local, rt for clock_gettime)
-target_link_libraries(hireslogger PRIVATE pthread rt) # TODO: considering remove it to favor raw RDTSC.
+target_link_libraries(hires_rt PRIVATE pthread rt) # TODO: considering remove it to favor raw RDTSC.
 
 # Set properties for installation and potential use by other CMake projects
-set_target_properties(hireslogger PROPERTIES
+set_target_properties(hires_rt PROPERTIES
     VERSION ${PROJECT_VERSION}
     SOVERSION 0 # Major API version
     PUBLIC_HEADER "include/rt.hpp;include/rt_c.h"

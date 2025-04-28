@@ -1,5 +1,6 @@
 #pragma once // Use pragma once for simplicity in headers
 
+#include <optional>
 #include <string>
 #include <stdexcept> // For exceptions
 #include <atomic>    // For std::atomic
@@ -55,6 +56,16 @@ public:
      * @return True on success, false if the buffer was full and the entry was dropped.
      */
     bool log(uint32_t event_id, uint64_t data1 = 0, uint64_t data2 = 0);
+    
+    /**
+     * @brief Attempts to pop one log entry from the buffer (Consumer Logic).
+     * This implements the single-consumer side of the MPSC queue.
+     * It waits briefly for the entry's VALID flag if necessary.
+     * @return An std::optional containing the log_entry_t if successful,
+     * std::nullopt if the buffer is empty or the entry wasn't ready
+     * within a short wait.
+     */
+    std::optional<log_entry_t> pop();
 
     /**
      * @brief Gets a raw pointer to the underlying shared memory buffer structure.
@@ -80,6 +91,9 @@ public:
     inline __attribute__((always_inline)) int get_fd() const noexcept {
         return fd_;
     }
+    
+    inline __attribute__((always_inline)) size_t get_rb_size() const noexcept { return rb_runtime_size_; }
+    inline __attribute__((always_inline)) size_t get_rb_mask() const noexcept { return rb_runtime_mask_; }
 };
 
 } // namespace Profiler

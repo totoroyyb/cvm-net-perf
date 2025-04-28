@@ -26,7 +26,7 @@
         #include <stdalign.h>  // alignas
         #define PROF_CACHE_LINE_ALIGNED alignas(PROF_CACHE_LINE_SIZE)
     #endif // __cplusplus
-    typedef size_t prof_size_t; // Use standard size_t for userspace
+    typedef uint64_t prof_size_t; // Use standard size_t for userspace
 #endif // __KERNEL__
 
 // Define fixed-size log entry structure using PLAIN types

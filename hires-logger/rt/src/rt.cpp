@@ -1,5 +1,6 @@
 #include <atomic>        // For std::atomic_ref, std::memory_order, std::atomic_thread_fence
 #include <cerrno>        // For errno
+#include <cstdint>
 #include <cstring>       // For strerror
 #include <fcntl.h>       // For open()
 #include <stdexcept>     // For runtime_error
@@ -71,20 +72,21 @@ HiResConn::HiResConn(const std::string &device_path) {
   //    Read buffer_size and size_mask ONCE after mapping.
   //    These are written by the kernel during init and don't change,
   //    so no atomicity needed here.
-  size_t expected_entries = (1UL << RING_BUFFER_LOG2_SIZE); // From header
-  if (shm_buf_->buffer_size != expected_entries ||
-      shm_buf_->size_mask != (expected_entries - 1)) {
-    // Handle mismatch - either throw, log warning, or adapt dynamically
-    munmap(shm_buf_, shm_size_); // Clean up map
-    close(fd_);                  // Clean up fd
-    fd_ = -1;
-    shm_buf_ = nullptr;
-    throw HiResError(
-        "Mapped buffer metadata mismatch. Expected size=" +
-        std::to_string(expected_entries) +
-        ", Mapped size=" + std::to_string(shm_buf_->buffer_size));
-    // Note: Using shm_buf_->buffer_size read *before* unmap! Better to store first.
-  }
+  // TODO: use ioctl to get the size, as the header size won't match the runtime size
+  // size_t expected_entries = (1UL << RING_BUFFER_LOG2_SIZE); // From header
+  // if (shm_buf_->buffer_size != expected_entries ||
+  //     shm_buf_->size_mask != (expected_entries - 1)) {
+  //   // Handle mismatch - either throw, log warning, or adapt dynamically
+  //   munmap(shm_buf_, shm_size_); // Clean up map
+  //   close(fd_);                  // Clean up fd
+  //   fd_ = -1;
+  //   shm_buf_ = nullptr;
+  //   throw HiResError(
+  //       "Mapped buffer metadata mismatch. Expected size=" +
+  //       std::to_string(expected_entries) +
+  //       ", Mapped size=" + std::to_string(shm_buf_->buffer_size));
+  //   // Note: Using shm_buf_->buffer_size read *before* unmap! Better to store first.
+  // }
   // Store the validated size/mask for later use if needed
   rb_runtime_size_ = shm_buf_->buffer_size;
   rb_runtime_mask_ = shm_buf_->size_mask;
@@ -111,22 +113,22 @@ bool HiResConn::log(uint32_t event_id, uint64_t data1,
     return false; // Not initialized
   }
 
-  std::atomic_ref<prof_size_t> atomic_head(shm_buf_->head);
-  std::atomic_ref<prof_size_t> atomic_tail(shm_buf_->tail); // For checking fullness
+  std::atomic_ref<uint64_t> atomic_head(shm_buf_->head);
+  std::atomic_ref<uint64_t> atomic_tail(shm_buf_->tail); // For checking fullness
   std::atomic_ref<uint64_t> atomic_dropped(shm_buf_->dropped_count); // For incrementing drops
 
   // Atomically reserve a slot (acquire needed for fetch, release not strictly needed but common)
   //    fetch_add returns the value BEFORE the addition.
   size_t head = atomic_head.fetch_add(1, std::memory_order_acq_rel);
-  size_t current_idx = head & rb_runtime_mask_; // Use validated mask
 
   size_t tail = atomic_tail.load(std::memory_order_acquire);
-  if ((head - tail) >= rb_runtime_size_) [[unlikely]] {
+  if ((head - tail) >= get_rb_size()) [[unlikely]] {
     atomic_dropped.fetch_add(1, std::memory_order_relaxed);
     // Note: Head was already incremented. No explicit rollback needed for this scheme.
     return false;
   }
 
+  size_t current_idx = head & get_rb_mask();
   log_entry_t *entry = &shm_buf_->buffer[current_idx];
 
   // Fill data (flags are handled atomically below)
@@ -164,4 +166,60 @@ bool HiResConn::log(uint32_t event_id, uint64_t data1,
   return true; // Success
 }
 
+std::optional<log_entry_t> HiResConn::pop() {
+  if (shm_buf_ == nullptr) {
+      return std::nullopt; // Not initialized
+  }
+
+  std::atomic_ref<uint64_t> atomic_head(shm_buf_->head);
+  std::atomic_ref<uint64_t> atomic_tail(shm_buf_->tail);
+
+  // 1. Read current tail (Relaxed is okay, only consumer modifies tail)
+  size_t tail = atomic_tail.load(std::memory_order_relaxed);
+
+  // 2. Check if buffer is empty (use Acquire on head load)
+  //    Ensures we see producer writes that happened *before* head was updated.
+  size_t head = atomic_head.load(std::memory_order_acquire);
+  if (tail == head) {
+      return std::nullopt; // Buffer is empty
+  }
+
+  // 3. Calculate index and get entry pointer
+  size_t current_idx = tail & get_rb_mask();
+  log_entry_t *entry = &shm_buf_->buffer[current_idx];
+  std::atomic_ref<uint16_t> atomic_flags(entry->flags);
+
+  // 4. Wait for the VALID flag (use Acquire load)
+  //    Ensures we see the data writes that happened *before* the flag was set.
+  //    Implement a short spin-wait with yield.
+  constexpr int max_spins = 100; // Limit spinning
+  int spin_count = 0;
+  while ((atomic_flags.load(std::memory_order_acquire) & LOG_FLAG_VALID) == 0) {
+      if (++spin_count > max_spins) {
+           // Entry wasn't ready quickly enough, maybe producer is slow or stuck.
+           // Return nullopt to allow caller to decide how to handle (e.g., retry later).
+           return std::nullopt;
+      }
+      std::this_thread::yield();
+  }
+
+  // 5. Read data (Entry is valid and ready)
+  //    Perform a simple copy. Volatile isn't strictly needed due to atomics/fences.
+  log_entry_t result_entry = *entry; // Direct struct copy
+
+  // 6. Optional: Clear the VALID flag (Relaxed store is sufficient)
+  //    This helps debugging and potentially some producer logic variants.
+  //    Read current flags first to preserve other bits (like KERNEL flag).
+  uint16_t current_flags = atomic_flags.load(std::memory_order_relaxed);
+  atomic_flags.store(current_flags & ~LOG_FLAG_VALID, std::memory_order_relaxed);
+
+
+  // 7. Advance tail (Release semantics)
+  //    Make the slot available for producers *after* we've finished reading.
+  //    Store the *next* tail value.
+  atomic_tail.store(tail + 1, std::memory_order_release);
+
+  // 8. Return the copied data
+  return result_entry;
+}
 } // namespace Profiler
