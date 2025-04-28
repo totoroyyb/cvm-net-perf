@@ -1,165 +1,179 @@
-#include "../include/profiler_rt.hpp"
-#include "../../shared_include/shared_profiler_data.h" // Need full definition here
+#include "../include/rt.hpp"    // Your application's header
+#include "../../shared/common.h" // Shared header with PLAIN types
 
+#include <atomic>        // For std::atomic_ref, std::memory_order, std::atomic_thread_fence
+#include <cerrno>        // For errno
+#include <cstring>       // For strerror
 #include <fcntl.h>       // For open()
-#include <unistd.h>      // For close()
+#include <stdexcept>     // For runtime_error
 #include <sys/mman.h>    // For mmap(), munmap()
 #include <sys/syscall.h> // For syscall(SYS_getcpu, ...)
-#include <time.h>        // For clock_gettime()
-#include <stdexcept>     // For runtime_error
-#include <atomic>        // For std::atomic
-#include <cstring>       // For strerror
-#include <cerrno>        // For errno
+#include <system_error>  // Include for std::system_error (better exception)
 #include <thread>        // For std::this_thread::yield
+#include <time.h>        // For clock_gettime()
+#include <unistd.h>      // For close()
 
-// Helper to map C11 _Atomic types in the struct to C++ std::atomic references
-// This relies on them having compatible layout and size, which is generally true
-// for standard integer types on common platforms. Use with caution.
-template<typename T>
-std::atomic<T>& as_std_atomic(volatile _Atomic(T)& c11_atomic) {
-    return *reinterpret_cast<volatile std::atomic<T>*>(&c11_atomic);
-}
-// Const version
-template<typename T>
-const std::atomic<T>& as_std_atomic(const volatile _Atomic(T)& c11_atomic) {
-    return *reinterpret_cast<const volatile std::atomic<T>*>(&c11_atomic);
-}
-
+#if __cplusplus < 202002L
+#error "This code requires C++20 or later for std::atomic_ref"
+#endif
 
 namespace Profiler {
 
 // --- ProfilerConnection Implementation ---
 
-uint64_t ProfilerConnection::get_monotonic_ns() {
-    struct timespec ts;
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
-        // Should not happen in practice on Linux unless system is broken
-        return 0;
-    }
-    return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL + static_cast<uint64_t>(ts.tv_nsec);
+// Helper to throw std::system_error with errno
+[[noreturn]] void throw_system_error(const std::string &context) {
+  throw std::system_error(errno, std::system_category(), context);
 }
 
-ProfilerConnection::ProfilerConnection(const std::string& device_path) {
-    // 1. Calculate required size (should match kernel module's calculation)
-    // For simplicity, assume fixed size defined in header for now.
-    // A robust way would be to read size via ioctl or from metadata in buffer.
-    shm_size_ = SHARED_RING_BUFFER_TOTAL_SIZE;
-    if (shm_size_ == 0 || shm_size_ < sizeof(shared_ring_buffer_t) - sizeof(log_entry_t)*RING_BUFFER_SIZE) {
-         throw ProfilerError("Invalid shared buffer size calculation");
-    }
+uint64_t ProfilerConnection::get_monotonic_ns() {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) == -1) {
+    // Use system_error for better exception handling
+    throw_system_error("clock_gettime(CLOCK_MONOTONIC) failed");
+  }
+  return static_cast<uint64_t>(ts.tv_sec) * 1000000000ULL +
+         static_cast<uint64_t>(ts.tv_nsec);
+}
 
-    // 2. Open the device
-    fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC); // Use O_CLOEXEC
-    if (fd_ == -1) {
-        throw ProfilerError("Failed to open device '" + device_path + "': " + strerror(errno));
-    }
+ProfilerConnection::ProfilerConnection(const std::string &device_path) {
+  // 1. Use the size calculation macro from the shared header
+  //    This ensures consistency with the kernel module's allocation.
+  shm_size_ = SHARED_RING_BUFFER_TOTAL_SIZE;
+  if (shm_size_ < sizeof(shared_ring_buffer_t)) { // Basic sanity check
+    throw ProfilerError("Invalid shared buffer size macro definition");
+  }
 
-    // 3. Map the device memory
-    void* mapped_ptr = mmap(
-        NULL,                   // Let kernel choose address
-        shm_size_,              // Map the calculated size
-        PROT_READ | PROT_WRITE, // Read/write access
-        MAP_SHARED,             // Share changes with other processes (and kernel)
-        fd_,                    // File descriptor of the device
-        0                       // Offset within the device memory (must be 0 for char device mmap)
-    );
+  // 2. Open the device
+  fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC); // Use O_CLOEXEC
+  if (fd_ == -1) {
+    throw_system_error("Failed to open device '" + device_path + "'");
+  }
 
-    if (mapped_ptr == MAP_FAILED) {
-        close(fd_); // Clean up fd before throwing
-        fd_ = -1;
-        throw ProfilerError("Failed to mmap device '" + device_path + "': " + strerror(errno));
-    }
+  // 3. Map the device memory
+  void *mapped_ptr =
+      mmap(NULL,                     // Let kernel choose address
+           shm_size_,                // Map the calculated size
+           PROT_READ | PROT_WRITE,   // Read/write access
+           MAP_SHARED | MAP_POPULATE, // Share changes + Hint to pre-fault pages
+           fd_,                      // File descriptor of the device
+           0 // Offset within the device memory (must be 0 for char device mmap)
+      );
 
-    shm_buf_ = static_cast<shared_ring_buffer_t*>(mapped_ptr);
+  if (mapped_ptr == MAP_FAILED) {
+    int saved_errno = errno; // Save errno before close() might change it
+    close(fd_);              // Clean up fd before throwing
+    fd_ = -1;
+    errno = saved_errno; // Restore errno for throw_system_error
+    throw_system_error("Failed to mmap device '" + device_path + "'");
+  }
 
-    // 4. Optional: Sanity check mapped buffer (e.g., check magic number or version if added)
-    // if (shm_buf_->magic_number != EXPECTED_MAGIC) { ... }
-    if (shm_buf_->buffer_size != (1UL << RING_BUFFER_LOG2_SIZE)) {
-         // Warning or error if size doesn't match compile time expectation
-         // Could dynamically adapt if size is read from metadata.
-         fprintf(stderr, "Warning: Mapped buffer size (%lu) differs from expected (%lu)\n",
-                 (unsigned long)shm_buf_->buffer_size, (unsigned long)RING_BUFFER_SIZE);
-         // For now, we'll proceed assuming the compile-time size is correct for masking etc.
-         // A truly robust system would use shm_buf_->buffer_size and shm_buf_->size_mask.
-    }
+  // Cast the mapped pointer to our shared struct type
+  shm_buf_ = static_cast<shared_ring_buffer_t *>(mapped_ptr);
+
+  // 4. Optional but Recommended: Sanity check mapped buffer metadata
+  //    Read buffer_size and size_mask ONCE after mapping.
+  //    These are written by the kernel during init and don't change,
+  //    so no atomicity needed here.
+  size_t expected_entries = (1UL << RING_BUFFER_LOG2_SIZE); // From header
+  if (shm_buf_->buffer_size != expected_entries ||
+      shm_buf_->size_mask != (expected_entries - 1)) {
+    // Handle mismatch - either throw, log warning, or adapt dynamically
+    munmap(shm_buf_, shm_size_); // Clean up map
+    close(fd_);                  // Clean up fd
+    fd_ = -1;
+    shm_buf_ = nullptr;
+    throw ProfilerError(
+        "Mapped buffer metadata mismatch. Expected size=" +
+        std::to_string(expected_entries) +
+        ", Mapped size=" + std::to_string(shm_buf_->buffer_size));
+    // Note: Using shm_buf_->buffer_size read *before* unmap! Better to store first.
+  }
+  // Store the validated size/mask for later use if needed
+  rb_runtime_size_ = shm_buf_->buffer_size;
+  rb_runtime_mask_ = shm_buf_->size_mask;
 }
 
 ProfilerConnection::~ProfilerConnection() {
-    if (shm_buf_ != nullptr) {
-        if (munmap(shm_buf_, shm_size_) == -1) {
-            // Log error, but can't do much else in destructor
-            fprintf(stderr, "ProfilerRT: munmap failed: %s\n", strerror(errno));
-        }
-        shm_buf_ = nullptr;
+  if (shm_buf_ != nullptr) {
+    if (munmap(shm_buf_, shm_size_) == -1) {
+      // Log error, but can't do much else in destructor
+      fprintf(stderr, "ProfilerRT: munmap failed: %s\n", strerror(errno));
     }
-    if (fd_ != -1) {
-        if (close(fd_) == -1) {
-             fprintf(stderr, "ProfilerRT: close failed: %s\n", strerror(errno));
-        }
-        fd_ = -1;
+    shm_buf_ = nullptr;
+  }
+  if (fd_ != -1) {
+    if (close(fd_) == -1) {
+      fprintf(stderr, "ProfilerRT: close failed: %s\n", strerror(errno));
     }
+    fd_ = -1;
+  }
 }
 
-bool ProfilerConnection::log(uint32_t event_id, uint64_t data1, uint64_t data2) {
-    if (shm_buf_ == nullptr) {
-        return false; // Not initialized
-    }
+bool ProfilerConnection::log(uint32_t event_id, uint64_t data1,
+                                 uint64_t data2) {
+  if (shm_buf_ == nullptr) {
+    return false; // Not initialized
+  }
 
-    // Use C++ atomics via the helper function for clarity
-    auto& atomic_head = as_std_atomic(shm_buf_->head);
-    auto& atomic_tail = as_std_atomic(shm_buf_->tail); // Consumer tail
-    auto& atomic_dropped = as_std_atomic(shm_buf_->dropped_count);
+  // --- Use std::atomic_ref for atomic operations on plain members ---
+  std::atomic_ref<prof_size_t> atomic_head(shm_buf_->head);
+  std::atomic_ref<prof_size_t> atomic_tail(shm_buf_->tail); // For checking fullness
+  std::atomic_ref<uint64_t> atomic_dropped(shm_buf_->dropped_count); // For incrementing drops
 
-    // 1. Atomically reserve a slot (Acquire needed to sync with consumer tail write)
-    size_t head = atomic_head.fetch_add(1, std::memory_order_acquire);
-    size_t current_idx = head & RING_BUFFER_MASK; // Use compile-time mask
+  // 1. Atomically reserve a slot (acquire needed for fetch, release not strictly needed but common)
+  //    fetch_add returns the value BEFORE the addition.
+  size_t head = atomic_head.fetch_add(1, std::memory_order_acq_rel);
+  size_t current_idx = head & rb_runtime_mask_; // Use validated mask
 
-    // 2. Check if buffer is full (Acquire needed for tail read)
-    // Compare how far head is ahead of tail.
-    size_t tail = atomic_tail.load(std::memory_order_acquire);
-    if ((head - tail) >= RING_BUFFER_SIZE) {
-        // Buffer is full
-        atomic_dropped.fetch_add(1, std::memory_order_relaxed); // Relaxed is fine for counter
-        // Optional: Roll back head if desired, but complicates logic slightly
-        // atomic_head.fetch_sub(1, std::memory_order_relaxed);
-        return false; // Indicate drop
-    }
+  // 2. Check if buffer is full (acquire needed for tail read)
+  //    Compare how far head is ahead of tail.
+  size_t tail = atomic_tail.load(std::memory_order_acquire);
+  // Use the validated runtime size
+  if ((head - tail) >= rb_runtime_size_) [[unlikely]] {
+    // Buffer is full
+    atomic_dropped.fetch_add(1, std::memory_order_relaxed); // Relaxed is fine for simple counter
+    // Note: Head was already incremented. No explicit rollback needed for this scheme.
+    return false; // Indicate drop
+  }
 
-    // 3. Get pointer to the entry
-    log_entry_t* entry = &shm_buf_->buffer[current_idx];
+  // 3. Get pointer to the entry
+  log_entry_t *entry = &shm_buf_->buffer[current_idx];
 
-    // 4. Fill data (flags first, without VALID)
-    uint16_t flags = 0; // Userspace origin
-    // Direct write to flags is okay here, final atomic store makes it visible
-    entry->flags = flags;
+  // 4. Fill data (flags are handled atomically below)
+  //    Direct writes to plain members are fine before the release operation.
+  entry->timestamp = get_monotonic_ns();
+  entry->event_id = event_id;
 
-    entry->timestamp = get_monotonic_ns();
-    entry->event_id = event_id;
-    // Get CPU ID using syscall (more portable than sched_getcpu glibc wrapper)
-    unsigned cpu = 0, node = 0; // Cache cpu/node info if needed for performance
-    #ifdef SYS_getcpu
-    if (syscall(SYS_getcpu, &cpu, &node, NULL) == -1) {
-        cpu = 0xFFFF; // Indicate error
-    }
-    #else
-    cpu = sched_getcpu(); // Fallback to glibc wrapper if syscall number unknown
-    #endif
-    entry->cpu_id = static_cast<uint16_t>(cpu);
-    entry->data1 = data1;
-    entry->data2 = data2;
+  // Get CPU ID using syscall (more portable than sched_getcpu glibc wrapper)
+  unsigned cpu = 0, node = 0; // Cache cpu/node info if needed for performance
+#ifdef SYS_getcpu
+  if (syscall(SYS_getcpu, &cpu, &node, NULL) == -1) {
+    cpu = 0xFFFF; // Indicate error
+  }
+#else
+  // Note: sched_getcpu() might be less efficient than the syscall
+  cpu = sched_getcpu();
+  if (cpu < 0) { // Check for error from sched_getcpu
+    cpu = 0xFFFF;
+  }
+#endif
+  entry->cpu_id = static_cast<uint16_t>(cpu);
+  entry->data1 = data1;
+  entry->data2 = data2;
 
-    // 5. Release Memory Barrier: Ensure all prior writes to the entry
-    // are visible before the flags update becomes visible.
-    std::atomic_thread_fence(std::memory_order_release);
+  // 5. Release Operations: Ensure prior writes are visible before VALID flag
+  //    Option A: Use atomic_thread_fence (explicit fence)
+  // std::atomic_thread_fence(std::memory_order_release);
+  //    Option B: Rely on the release semantics of the atomic store below
 
-    // 6. Atomically set the VALID flag (Release semantics)
-    // This makes the entry visible to the consumer.
-    // Use atomic store on the flags field directly.
-    auto& atomic_flags = as_std_atomic(entry->flags); // Treat flags field as atomic
-    atomic_flags.store(flags | LOG_FLAG_VALID, std::memory_order_release);
+  // 6. Atomically set the flags including the VALID bit (Release semantics)
+  //    This makes the entry visible to the consumer.
+  std::atomic_ref<uint16_t> atomic_flags(entry->flags);
+  uint16_t initial_flags = 0; // Userspace origin, VALID bit will be added by store
+  atomic_flags.store(initial_flags | LOG_FLAG_VALID, std::memory_order_release);
 
-    return true; // Success
+  return true; // Success
 }
-
 
 } // namespace Profiler

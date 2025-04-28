@@ -1,5 +1,5 @@
-#include "../include/profiler_c_api.h"
-#include "../include/profiler_rt.hpp" // Include the C++ implementation header
+#include "../include/c_api.h"
+#include "../include/rt.hpp"
 #include <string>
 #include <vector> // Could use vector for thread-local storage if needed
 

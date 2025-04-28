@@ -6,10 +6,12 @@
 #include <cstddef>   // For size_t
 #include <cstdint>   // For uint types
 
+#include "../../shared/common.h"
+
 // Forward declare the shared struct (avoids pulling the whole C header into C++ header)
 // Or include it directly if preferred, but forward declaration is cleaner interface.
-struct shared_ring_buffer_t; // Defined in shared_profiler_data.h
-struct log_entry_t;          // Defined in shared_profiler_data.h
+// struct shared_ring_buffer_t; // Defined in shared_profiler_data.h
+// struct log_entry_t;          // Defined in shared_profiler_data.h
 
 namespace Profiler {
 
@@ -25,6 +27,8 @@ private:
     int fd_ = -1;                     // File descriptor for /dev/profiler_buf
     shared_ring_buffer_t* shm_buf_ = nullptr; // Mapped pointer
     size_t shm_size_ = 0;             // Size of the mapped region
+    size_t rb_runtime_size_ = 0;      // Size of the ring buffer
+    size_t rb_runtime_mask_ = 0;      // Mask for ring buffer size
 
     // Helper to get monotonic time
     static uint64_t get_monotonic_ns();

@@ -9,7 +9,7 @@
 typedef struct ProfilerConnectionHandle ProfilerConnectionHandle;
 
 // Bring in the shared struct definition for users of the C API
-#include "../../shared_include/shared_profiler_data.h"
+#include "../../shared/common.h"
 
 
 #ifdef __cplusplus
