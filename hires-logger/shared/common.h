@@ -40,14 +40,15 @@ typedef struct {
 } hires_rb_meta_t;
 
 #define HIRES_IOCTL_MAGIC 'h'
-#define HIRES_IOCTL_RESET_RB    _IO(HIRES_IOCTL_MAGIC, 1)
-#define HIRES_IOCTL_GET_RB_META _IOR(HIRES_IOCTL_MAGIC, 2, hires_rb_meta_t)
+#define HIRES_IOCTL_RESET_RB                _IO(HIRES_IOCTL_MAGIC, 1)
+#define HIRES_IOCTL_GET_RB_META             _IOR(HIRES_IOCTL_MAGIC, 2, hires_rb_meta_t)
+#define HIRES_IOCTL_GET_TSC_CYCLE_PER_MS    _IOR(HIRES_IOCTL_MAGIC, 3, prof_size_t)
 // --- End IOCTL Definitions ---
 
 typedef struct {
     uint64_t timestamp;
     uint32_t event_id;
-    uint16_t cpu_id;
+    uint32_t cpu_id;
     uint16_t flags;
     uint64_t data1;
     uint64_t data2;

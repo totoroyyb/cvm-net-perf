@@ -1,10 +1,12 @@
-#include <linux/atomic.h> // Kernel atomics (Needed for functions now)
+#include <linux/atomic.h>
 #include <linux/cdev.h>
+#include <linux/delay.h> // For msleep/udelay
 #include <linux/device.h>
 #include <linux/errno.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
-#include <linux/ktime.h> // For ktime_get_ns()
+// #include <linux/ktime.h>  // For ktime_get_ns()
+#include <linux/math64.h> // For div64_u64
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/sched.h>   // For smp_processor_id()
@@ -16,6 +18,7 @@
 #include <linux/vmalloc.h> // For vmalloc/vfree if using that
 
 #include "../shared/common.h"
+#include "../shared/ops.h"
 
 #define DEVICE_NAME "khires"
 #define CLASS_NAME "hireslogger"
@@ -30,12 +33,12 @@ MODULE_PARM_DESC(rb_size_log2, "Log2 of the ring buffer size in entries");
 static dev_t dev_num;
 static struct cdev hires_cdev;
 static struct class *hireslogger_class = NULL;
-static shared_ring_buffer_t *shared_buffer =
-    NULL; // Kernel virtual address mapping (usually just first page)
-static unsigned long buffer_total_size =
-    0; // Total size in bytes (page aligned)
+static shared_ring_buffer_t *shared_buffer = NULL;
+// Total size in bytes (page aligned)
+static unsigned long buffer_total_size = 0;
 static unsigned long buffer_num_pages = 0;
-static struct page **buffer_pages = NULL; // Array holding buffer pages
+// Array holding buffer pages
+static struct page **buffer_pages = NULL;
 
 // --- Forward Declarations ---
 static int hireslogger_dev_open(struct inode *, struct file *);
@@ -43,7 +46,45 @@ static int hireslogger_dev_release(struct inode *, struct file *);
 static int hireslogger_dev_mmap(struct file *filp, struct vm_area_struct *vma);
 static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
                                   unsigned long arg);
-int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2);
+static u64 hires_calibrate_tsc(void);
+int hires_log(u32 event_id, u64 data1, u64 data2);
+
+// --- TSC Calibration ---
+static u64 cycles_per_us PROF_CACHE_LINE_ALIGNED = 0;
+
+// Helper function to calibrate TSC frequency (cycles per microsecond)
+static u64 hires_calibrate_tsc(void) {
+  u64 start_tsc, end_tsc, elapsed_tsc;
+  ktime_t start_time, end_time;
+  s64 elapsed_ns;
+  const unsigned int delay_ms = 500;
+
+  // Prevent migration during measurement
+  preempt_disable();
+  cpu_serialize();
+  start_time = ktime_get();
+  start_tsc = __rdtsc();
+  preempt_enable();
+
+  msleep(delay_ms);
+
+  preempt_disable();
+  end_tsc = __rdtscp(NULL);
+  end_time = ktime_get();
+  preempt_enable();
+
+  elapsed_tsc = end_tsc - start_tsc;
+  elapsed_ns = ktime_to_ns(ktime_sub(end_time, start_time));
+
+  if (elapsed_ns <= 0) {
+    pr_warn("kHiResLogger: TSC calibration failed (elapsed_ns <= 0)\n");
+    return 0;
+  }
+
+  // Calculate cycles per microsecond: (cycles * 1,000) / ns
+  cycles_per_us = div64_u64(elapsed_tsc * 1000, elapsed_ns);
+  return cycles_per_us;
+}
 
 // --- File Operations ---
 static const struct file_operations fops = {
@@ -68,7 +109,8 @@ static vm_fault_t hireslogger_vma_fault(struct vm_fault *vmf) {
     return VM_FAULT_SIGBUS;
   }
 
-  get_page(page); // Increment page reference count
+  // Increment page reference count
+  get_page(page);
   vmf->page = page;
 
   return 0;
@@ -115,7 +157,8 @@ static int hireslogger_dev_mmap(struct file *filp, struct vm_area_struct *vma) {
 static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
                                   unsigned long arg) {
   int ret = 0;
-  prof_size_t i; // Use the correct type for buffer indices
+  prof_size_t i;
+  void __user *user_ptr = (void __user *)arg;
 
   // Check if the shared buffer is initialized
   if (unlikely(!READ_ONCE(shared_buffer))) {
@@ -151,16 +194,33 @@ static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
 
   case HIRES_IOCTL_GET_RB_META: {
     hires_rb_meta_t meta;
-    void __user *user_ptr = (void __user *)arg;
 
     pr_info("kHiResLogger: IOCTL: Get buffer info.\n");
 
     meta.capacity = READ_ONCE(shared_buffer->capacity);
     meta.idx_mask = READ_ONCE(shared_buffer->idx_mask);
-    meta.shm_size_bytes_unaligned = READ_ONCE(shared_buffer->shm_size_bytes_unaligned);
+    meta.shm_size_bytes_unaligned =
+        READ_ONCE(shared_buffer->shm_size_bytes_unaligned);
 
     if (copy_to_user(user_ptr, &meta, sizeof(meta))) {
       pr_err("kHiResLogger: IOCTL: Failed to copy buffer info to user.\n");
+      ret = -EFAULT;
+    } else {
+      ret = 0;
+    }
+    break;
+  }
+
+  case HIRES_IOCTL_GET_TSC_CYCLE_PER_MS: {
+    pr_info("kHiResLogger: IOCTL: Get calibrated TSC freq (cycles/ms).\n");
+    if (cycles_per_us == 0) {
+      pr_err("kHiResLogger: TSC freq not calibrated yet or error happened.\n");
+      ret = -EFAULT;
+      break;
+    }
+
+    if (put_user(cycles_per_us, (u64 __user *)user_ptr)) {
+      pr_err("kHiResLogger: IOCTL: Failed to copy TSC freq to user.\n");
       ret = -EFAULT;
     } else {
       ret = 0;
@@ -187,7 +247,7 @@ static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
  *
  * Returns 0 on success, -ENOMEM if buffer is full, -EIO if not initialized.
  */
-int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2) {
+int hires_log(u32 event_id, u64 data1, u64 data2) {
   prof_size_t head_val, tail_val, next_head_val, current_idx;
   log_entry_t *entry;
   uint16_t old_flags, new_flags;
@@ -236,11 +296,9 @@ int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2) {
 
   // 4. Fill in the data (flags field handled atomically later)
   //    Direct writes to plain struct members.
-  entry->timestamp = ktime_get_ns(); // High-resolution monotonic timestamp
+  entry->timestamp = __rdtscp(&entry->cpu_id);
   entry->event_id = event_id;
-  entry->cpu_id =
-      (uint16_t)raw_smp_processor_id(); // Use raw version inside
-                                        // preemption-unsafe sections if needed
+
   entry->data1 = data1;
   entry->data2 = data2;
 
@@ -253,13 +311,9 @@ int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2) {
   //    This provides release semantics implicitly on success on most
   //    architectures, making the written data visible to the consumer.
   do {
-    // Read the current flags value (non-atomically is okay inside CAS loop)
     old_flags = READ_ONCE(entry->flags);
-    // Prepare the new flags value, ensuring VALID bit is set and kernel bit.
     new_flags =
         (old_flags & ~LOG_FLAG_VALID) | LOG_FLAG_VALID | LOG_FLAG_KERNEL;
-    // Attempt atomic swap. cmpxchg returns the *old* value. Loop if it wasn't
-    // what we read.
   } while (cmpxchg(&entry->flags, old_flags, new_flags) != old_flags);
   // --- Entry is now visible to consumer ---
 
@@ -269,16 +323,28 @@ int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2) {
 // Export the function for use in the kernel.
 EXPORT_SYMBOL(hires_log);
 
+__always_inline u64 hires_rdtsc(void) { return __rdtsc(); }
+EXPORT_SYMBOL(hires_rdtsc);
+
+__always_inline u64 hires_rdtscp(u32 *auxp) { return __rdtscp(auxp); }
+EXPORT_SYMBOL(hires_rdtscp);
+
 // --- Module Initialization and Exit ---
 static int __init hireslogger_km_init(void) {
   int ret = 0;
   size_t i;
   unsigned long calculated_ring_buffer_entries;
-  unsigned long calculated_buffer_ctrl_size =
-      SHARED_RING_BUFFER_CTRL_SIZE;
+  unsigned long calculated_buffer_ctrl_size = SHARED_RING_BUFFER_CTRL_SIZE;
   unsigned long calculated_buffer_total_size_unaligned;
 
   pr_info("kHiResLogger: Initializing module...\n");
+
+  u64 tsc_cycle = hires_calibrate_tsc();
+  if (tsc_cycle == 0) {
+    pr_err("kHiResLogger: TSC calibration failed.\n");
+    return -EIO;
+  }
+  pr_info("kHiResLogger: TSC cycles per us: %llu\n", tsc_cycle);
 
   calculated_ring_buffer_entries = (1UL << rb_size_log2);
   calculated_buffer_total_size_unaligned =
@@ -356,7 +422,7 @@ static int __init hireslogger_km_init(void) {
   device_create(hireslogger_class, NULL, dev_num, NULL, DEVICE_NAME);
   pr_info("kHiResLogger: Device node /dev/%s created.\n", DEVICE_NAME);
   pr_info("kHiResLogger: Module loaded successfully.\n");
-  return 0; // Success
+  return 0;
 
 fail_class_create:
   class_destroy(hireslogger_class);
@@ -415,6 +481,5 @@ module_exit(hireslogger_km_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Yibo Yan");
-MODULE_DESCRIPTION(
-    "HiResLogger Kernel Module with MPSC Ring Buffer via mmap");
+MODULE_DESCRIPTION("HiResLogger Kernel Module with MPSC Ring Buffer via mmap");
 MODULE_VERSION("0.1");
