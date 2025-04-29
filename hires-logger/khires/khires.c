@@ -48,6 +48,8 @@ static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
                                   unsigned long arg);
 static u64 hires_calibrate_tsc(void);
 int hires_log(u32 event_id, u64 data1, u64 data2);
+u64 hires_rdtsc(void);
+u64 hires_rdtscp(u32 *auxp);
 
 // --- TSC Calibration ---
 static u64 cycles_per_us PROF_CACHE_LINE_ALIGNED = 0;
