@@ -44,7 +44,7 @@ static uint64_t __time_calibrate_tsc(void)
 	uint64_t cycles_per_us = 0;
 
 	/* TODO: New Intel CPUs report this value in CPUID */
-	struct timespec sleeptime = {.tv_nsec = 5E8 }; /* 1/2 second */
+	struct timespec sleeptime = {.tv_nsec = 500000000L }; /* 1/2 second */
 	struct timespec t_start, t_end;
 
 	cpu_serialize();
@@ -61,11 +61,10 @@ static uint64_t __time_calibrate_tsc(void)
 
 		secs = (double)ns / 1000;
 		cycles_per_us = (uint64_t)((end - start) / secs);
-		printf("time: detected %d ticks / us", cycles_per_us);
 		return cycles_per_us;
 	}
 
-	return -1;
+	return 0;
 }
 #endif
 

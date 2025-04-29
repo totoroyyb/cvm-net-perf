@@ -6,6 +6,7 @@
 #include <stdbool.h>
 
 #include "../../shared/common.h"
+#include "../../shared/ops.h"
 
 typedef struct HiResLoggerConnHandle HiResLoggerConnHandle;
 
@@ -68,6 +69,9 @@ size_t hires_get_shm_size(HiResLoggerConnHandle* handle);
 size_t hires_get_rb_capacity(HiResLoggerConnHandle* handle);
 size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle);
 uint64_t hires_get_cycles_per_us(HiResLoggerConnHandle* handle);
+
+uint64_t hires_rdtsc(void);
+uint64_t hires_rdtscp(uint32_t* auxp);
 
 /**
  * @brief Gets the last error message encountered by the API functions for the current thread.

@@ -171,6 +171,18 @@ impl<'a> HiResConn<'a> {
     }
 }
 
+#[inline]
+fn rdtsc() -> u64 {
+    unsafe { ffi::hires_rdtsc() }
+}
+
+#[inline]
+fn rdtscp() -> (u64, u32) {
+    let mut cpu_id: u32 = 0;
+    let ts = unsafe { ffi::hires_rdtscp(&mut cpu_id as *mut u32) };
+    return (ts, cpu_id as u32);
+}
+
 // Implement Drop to automatically call profiler_disconnect
 impl<'a> Drop for HiResConn<'a> {
     fn drop(&mut self) {

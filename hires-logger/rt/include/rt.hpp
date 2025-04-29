@@ -1,12 +1,11 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <stdexcept>
 #include <string>
 
 #include "../../shared/common.h"
+#include "../../shared/ops.h"
 
 namespace HiResLogger {
 
@@ -132,4 +131,13 @@ public:
   }
 };
 
+inline __attribute__((always_inline)) uint64_t
+rdtsc() noexcept {
+  return Ops::__rdtsc();
+}
+
+inline __attribute__((always_inline)) uint64_t
+rdtscp(uint32_t* auxp) noexcept {
+  return Ops::__rdtscp(auxp);
+}
 } // namespace HiResLogger
