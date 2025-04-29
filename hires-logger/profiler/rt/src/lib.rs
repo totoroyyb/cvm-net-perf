@@ -139,6 +139,14 @@ impl<'a> HiResConn<'a> {
         }
         return unsafe { ffi::hires_get_rb_idx_mask(self.handle) as u64 };
     }
+    
+    #[inline]
+    pub fn get_drop_num(&self) -> u64 {
+        if self.handle.is_null() {
+            return 0;
+        }
+        return unsafe { ffi::hires_get_drop_num(self.handle) as u64 };
+    }
 
     /// Gets a raw pointer to the underlying shared memory buffer structure.
     ///

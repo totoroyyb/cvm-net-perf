@@ -159,11 +159,21 @@ uint64_t hires_get_cycles_per_us(HiResLoggerConnHandle* handle) {
     return conn->get_cycle_per_us();
 }
 
-inline __attribute__((always_inline)) uint64_t hires_rdtsc(void) {
+uint64_t hires_get_drop_num(HiResLoggerConnHandle* handle) {
+    set_last_error(""); // Clear last error
+    if (handle == nullptr) {
+        set_last_error("Invalid handle passed to profiler_get_cycle_per_us");
+        return 0;
+    }
+    HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
+    return conn->get_drop_num();
+}
+
+uint64_t hires_rdtsc(void) {
     return HiResLogger::Ops::__rdtsc();
 }
 
-inline __attribute__((always_inline)) uint64_t hires_rdtscp(uint32_t* auxp) {
+uint64_t hires_rdtscp(uint32_t* auxp) {
     return HiResLogger::Ops::__rdtscp(auxp);
 }
 

@@ -16,6 +16,8 @@ rt = { path = "rt" }
 libc = "0.2" # Needed for sleep/yield if used
 nix = { version = "0.27", features = ["sched"] } # For sched_getcpu if needed directly
 clap = { version = "4.4", features = ["derive"] } # For command-line argument parsing
+ctrlc = "3.4.6"
+
 
 [profile.release]
 opt-level = 3

@@ -68,6 +68,7 @@ size_t hires_get_shm_size(HiResLoggerConnHandle* handle);
 size_t hires_get_rb_capacity(HiResLoggerConnHandle* handle);
 size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle);
 uint64_t hires_get_cycles_per_us(HiResLoggerConnHandle* handle);
+uint64_t hires_get_drop_num(HiResLoggerConnHandle* handle);
 
 uint64_t hires_rdtsc(void);
 uint64_t hires_rdtscp(uint32_t* auxp);

@@ -13,7 +13,7 @@ int main() {
         std::cout << "Producer connected successfully." << std::endl;
 
         uint64_t counter = 0;
-        uint32_t event_id = 1001; // Example event ID
+        uint32_t event_id = 1; // Example event ID
 
         while (true) {
             // Log an event

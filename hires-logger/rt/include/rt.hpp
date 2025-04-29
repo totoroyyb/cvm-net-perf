@@ -129,6 +129,11 @@ public:
   get_cycle_per_us() const noexcept {
     return cycles_per_us_;
   }
+  
+  inline __attribute__((always_inline)) uint64_t
+  get_drop_num() const noexcept {
+    return shm_buf_->dropped_count;
+  }
 };
 
 inline __attribute__((always_inline)) uint64_t
