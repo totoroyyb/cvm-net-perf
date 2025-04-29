@@ -1,17 +1,16 @@
-#include <atomic> // For std::atomic_ref, std::memory_order, std::atomic_thread_fence
-#include <cerrno> // For errno
+#include <atomic>
+#include <cerrno>
 #include <cstdint>
-#include <cstring>       // For strerror
-#include <fcntl.h>       // For open()
+#include <cstring>
+#include <fcntl.h>
 #include <iostream>
 #include <optional>
-#include <stdexcept>     // For runtime_error
 #include <sys/mman.h>    // For mmap(), munmap()
 #include <sys/syscall.h> // For syscall(SYS_getcpu, ...)
-#include <system_error>  // Include for std::system_error (better exception)
-#include <thread>        // For std::this_thread::yield
-#include <time.h>        // For clock_gettime()
-#include <unistd.h>      // For close()
+#include <system_error>
+#include <thread>
+#include <time.h> // For clock_gettime()
+#include <unistd.h>
 
 #include "../../shared/common.h"
 #include "../include/rt.hpp"
@@ -37,14 +36,13 @@ uint64_t HiResConn::get_monotonic_ns() {
 }
 
 HiResConn::HiResConn(const std::string &device_path) {
-  // 1. Use the size calculation macro from the shared header
-  //    This ensures consistency with the kernel module's allocation.
-  shm_size_ = SHARED_RING_BUFFER_TOTAL_SIZE;
-  if (shm_size_ < sizeof(shared_ring_buffer_t)) { // Basic sanity check
+  // use the default size first, then use ioctl to get the real size.
+  this->rb_runtime_shm_size_ = SHARED_RING_BUFFER_TOTAL_SIZE;
+  if (this->rb_runtime_shm_size_ < SHARED_RING_BUFFER_CTRL_SIZE) {
+    // at least larger than the header size...
     throw HiResError("Invalid shared buffer size macro definition");
   }
 
-  // 2. Open the device
   fd_ = open(device_path.c_str(), O_RDWR | O_CLOEXEC);
   if (fd_ == -1) {
     throw_system_error("Failed to open device '" + device_path + "'");
@@ -53,19 +51,18 @@ HiResConn::HiResConn(const std::string &device_path) {
   // ioctl for reading the runtime rb size and mask.
   auto rb_meta = this->get_rb_meta();
   if (!rb_meta.has_value()) {
-    throw HiResError(
-        "Failed to get ring buffer metadata from device '" + device_path + "'");
+    throw HiResError("Failed to get ring buffer metadata from device '" +
+                     device_path + "'");
   }
-  std::cout << "Ring buffer size: " << rb_meta->buffer_size
-            << ", size mask: " << rb_meta->size_mask << std::endl;
+  std::cout << "RB capacity: " << rb_meta->capacity
+            << ", idx mask: " << rb_meta->idx_mask
+            << ", shm size: " << rb_meta->shm_size_bytes_unaligned << std::endl;
   this->set_runtime_rb_meta(*rb_meta);
-  // use the runtime size for the mmap
-  this->shm_size_ = this->rb_runtime_size_;
 
   // 3. Map the device memory
   void *mapped_ptr =
       mmap(NULL,                      // Let kernel choose address
-           shm_size_,                 // Map the calculated size
+           get_rb_shm_size(),         // Map the calculated size
            PROT_READ | PROT_WRITE,    // Read/write access
            MAP_SHARED | MAP_POPULATE, // Share changes + Hint to pre-fault pages
            fd_,                       // File descriptor of the device
@@ -107,7 +104,7 @@ HiResConn::HiResConn(const std::string &device_path) {
 
 HiResConn::~HiResConn() {
   if (shm_buf_ != nullptr) {
-    if (munmap(shm_buf_, shm_size_) == -1) {
+    if (munmap(shm_buf_, get_rb_shm_size()) == -1) {
       fprintf(stderr, "HiResLoggerRT: munmap failed: %s\n", strerror(errno));
     }
     shm_buf_ = nullptr;
@@ -120,15 +117,15 @@ HiResConn::~HiResConn() {
   }
 }
 
-inline __attribute__((always_inline)) std::optional<hires_rb_meta_t> HiResConn::get_rb_meta() const noexcept {
+std::optional<hires_rb_meta_t> HiResConn::get_rb_meta() const noexcept {
   long ioctl_ret = 0;
   hires_rb_meta_t meta;
   ioctl_ret = ioctl(this->get_fd(), HIRES_IOCTL_GET_RB_META, &meta);
   if (ioctl_ret < 0) {
-    std::cerr << "ERROR: HIRES_IOCTL_GET_RB_META failed. Error " << errno << ": "
-              << strerror(errno) << std::endl;
+    std::cerr << "ERROR: HIRES_IOCTL_GET_RB_META failed. Error " << errno
+              << ": " << strerror(errno) << std::endl;
     return std::nullopt;
-  } 
+  }
   return meta;
 }
 
@@ -149,14 +146,14 @@ bool HiResConn::log(uint32_t event_id, uint64_t data1, uint64_t data2) {
   size_t head = atomic_head.fetch_add(1, std::memory_order_acq_rel);
 
   size_t tail = atomic_tail.load(std::memory_order_acquire);
-  if ((head - tail) >= get_rb_size()) [[unlikely]] {
+  if ((head - tail) >= get_rb_capacity()) [[unlikely]] {
     atomic_dropped.fetch_add(1, std::memory_order_relaxed);
     // Note: Head was already incremented. No explicit rollback needed for this
     // scheme.
     return false;
   }
 
-  size_t current_idx = head & get_rb_mask();
+  size_t current_idx = head & get_rb_idx_mask();
   log_entry_t *entry = &shm_buf_->buffer[current_idx];
 
   // Fill data (flags are handled atomically below)
@@ -214,7 +211,7 @@ std::optional<log_entry_t> HiResConn::pop() {
   }
 
   // 3. Calculate index and get entry pointer
-  size_t current_idx = tail & get_rb_mask();
+  size_t current_idx = tail & get_rb_idx_mask();
   log_entry_t *entry = &shm_buf_->buffer[current_idx];
   std::atomic_ref<uint16_t> atomic_flags(entry->flags);
 

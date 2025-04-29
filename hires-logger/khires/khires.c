@@ -137,7 +137,7 @@ static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
     // Clear the VALID flag for all entries to prevent stale reads
     // This might contend with producers, but reset is usually infrequent.
     // A more complex scheme could involve a generation count.
-    for (i = 0; i < shared_buffer->buffer_size; ++i) {
+    for (i = 0; i < shared_buffer->capacity; ++i) {
       uint16_t old_flags, new_flags;
       log_entry_t *entry = &shared_buffer->buffer[i];
       do {
@@ -155,8 +155,9 @@ static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
 
     pr_info("kHiResLogger: IOCTL: Get buffer info.\n");
 
-    meta.buffer_size = READ_ONCE(shared_buffer->buffer_size);
-    meta.size_mask = READ_ONCE(shared_buffer->size_mask);
+    meta.capacity = READ_ONCE(shared_buffer->capacity);
+    meta.idx_mask = READ_ONCE(shared_buffer->idx_mask);
+    meta.shm_size_bytes_unaligned = READ_ONCE(shared_buffer->shm_size_bytes_unaligned);
 
     if (copy_to_user(user_ptr, &meta, sizeof(meta))) {
       pr_err("kHiResLogger: IOCTL: Failed to copy buffer info to user.\n");
@@ -203,7 +204,7 @@ int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2) {
   //    value. Using atomic64_fetch_add_acquire on the *address* of the plain
   //    u64 head field.
   head_val = atomic64_fetch_add_acquire(1, (atomic64_t *)&shared_buffer->head);
-  current_idx = head_val & shared_buffer->size_mask; // Use mask from header
+  current_idx = head_val & shared_buffer->idx_mask; // Use mask from header
 
   // 2. Check if buffer is full (using Acquire semantics for tail read)
   //    We compare the *next* potential head position against the current tail.
@@ -213,7 +214,7 @@ int hires_log(uint32_t event_id, uint64_t data1, uint64_t data2) {
   // If the slot we're about to write (current_idx) is the same as the tail,
   // and head has already wrapped around past tail, the buffer is full.
   if (unlikely(current_idx == tail_val &&
-               (head_val - tail_val) >= shared_buffer->buffer_size)) {
+               (head_val - tail_val) >= shared_buffer->capacity)) {
     // Buffer is full. Increment dropped count atomically.
     // No need to roll back head with fetch_add.
     atomic64_inc((atomic64_t *)&shared_buffer->dropped_count);
@@ -273,22 +274,17 @@ static int __init hireslogger_km_init(void) {
   int ret = 0;
   size_t i;
   unsigned long calculated_ring_buffer_entries;
-  // Use the macro from the header if available, otherwise calculate offset
-  // manually
   unsigned long calculated_buffer_ctrl_size =
-      SHARED_RING_BUFFER_CTRL_SIZE; // From common.h
+      SHARED_RING_BUFFER_CTRL_SIZE;
   unsigned long calculated_buffer_total_size_unaligned;
 
   pr_info("kHiResLogger: Initializing module...\n");
 
   calculated_ring_buffer_entries = (1UL << rb_size_log2);
-  // Calculate total size needed based on control block size + actual buffer
-  // array size
   calculated_buffer_total_size_unaligned =
       calculated_buffer_ctrl_size +
       (calculated_ring_buffer_entries * sizeof(log_entry_t));
 
-  // Align total size UP to the nearest page boundary
   buffer_total_size = PAGE_ALIGN(calculated_buffer_total_size_unaligned);
   buffer_num_pages = buffer_total_size / PAGE_SIZE;
 
@@ -299,7 +295,6 @@ static int __init hireslogger_km_init(void) {
           calculated_buffer_ctrl_size, calculated_buffer_total_size_unaligned,
           buffer_total_size, buffer_num_pages);
 
-  // 1. Allocate page array and the pages themselves
   buffer_pages = kcalloc(buffer_num_pages, sizeof(struct page *), GFP_KERNEL);
   if (!buffer_pages) {
     pr_err("kHiResLogger: Failed to allocate page pointer array\n");
@@ -316,9 +311,7 @@ static int __init hireslogger_km_init(void) {
     }
   }
 
-  // ---- IMPORTANT KERNEL VIRTUAL ADDRESS MAPPING ----
   // We need a contiguous kernel virtual mapping of potentially non-contiguous
-  // physical pages vmap() is the standard way to achieve this.
   shared_buffer = vmap(buffer_pages, buffer_num_pages, VM_MAP, PAGE_KERNEL);
   if (!shared_buffer) {
     pr_err("kHiResLogger: Failed to vmap page array\n");
@@ -326,27 +319,24 @@ static int __init hireslogger_km_init(void) {
     goto fail_alloc_pages;
   }
 
-  // 2. Initialize the shared buffer structure header (at the start of the
-  // vmap'd region)
   pr_info("kHiResLogger: Initializing shared buffer header at %px\n",
           shared_buffer);
-  // Direct writes to plain integer fields
-  shared_buffer->buffer_size = calculated_ring_buffer_entries;
-  shared_buffer->size_mask = calculated_ring_buffer_entries - 1;
-  // Use atomic64_set on the *address* of the plain u64 fields
+  shared_buffer->capacity = calculated_ring_buffer_entries;
+  shared_buffer->idx_mask = calculated_ring_buffer_entries - 1;
+  shared_buffer->shm_size_bytes_unaligned =
+      calculated_buffer_total_size_unaligned;
+  shared_buffer->shm_size_bytes_aligned = buffer_total_size;
+
   atomic64_set((atomic64_t *)&shared_buffer->head, 0);
   atomic64_set((atomic64_t *)&shared_buffer->tail, 0);
   atomic64_set((atomic64_t *)&shared_buffer->dropped_count, 0);
 
-  // 3. Allocate device number
   ret = alloc_chrdev_region(&dev_num, 0, 1, DEVICE_NAME);
   if (ret < 0) {
     pr_err("kHiResLogger: Failed to allocate major number: %d\n", ret);
-    goto fail_vmap; // Use the vmap cleanup path
+    goto fail_vmap;
   }
-  // pr_info("kHiResLogger: Major number allocated: %d\n", MAJOR(dev_num));
 
-  // 4. Create device class
   hireslogger_class = class_create(CLASS_NAME);
   if (IS_ERR(hireslogger_class)) {
     pr_err("kHiResLogger: Failed to create device class: %ld\n",
@@ -354,9 +344,7 @@ static int __init hireslogger_km_init(void) {
     ret = PTR_ERR(hireslogger_class);
     goto fail_chrdev_region;
   }
-  // pr_info("kHiResLogger: Device class created successfully.\n");
 
-  // 5. Create character device
   cdev_init(&hires_cdev, &fops);
   hires_cdev.owner = THIS_MODULE;
   ret = cdev_add(&hires_cdev, dev_num, 1);
@@ -364,16 +352,12 @@ static int __init hireslogger_km_init(void) {
     pr_err("kHiResLogger: Failed to add cdev: %d\n", ret);
     goto fail_class_create;
   }
-  // pr_info("kHiResLogger: Character device added successfully.\n");
 
-  // 6. Create device node (/dev/khires)
   device_create(hireslogger_class, NULL, dev_num, NULL, DEVICE_NAME);
   pr_info("kHiResLogger: Device node /dev/%s created.\n", DEVICE_NAME);
-
   pr_info("kHiResLogger: Module loaded successfully.\n");
   return 0; // Success
 
-// --- Error Handling Cleanup ---
 fail_class_create:
   class_destroy(hireslogger_class);
 fail_chrdev_region:

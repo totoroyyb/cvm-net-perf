@@ -1,8 +1,8 @@
-#include "../include/rt_c.h"
-#include "../include/rt.hpp"
 #include <cstddef>
 #include <string>
-#include <vector> // Could use vector for thread-local storage if needed
+
+#include "../include/rt_c.h"
+#include "../include/rt.hpp"
 
 // --- Thread-Local Error Handling ---
 // Simple mechanism using thread_local for storing the last error message.
@@ -29,8 +29,6 @@ static void set_last_error(const std::string& msg) {
     // strncpy(last_error_buffer, msg.c_str(), sizeof(last_error_buffer) - 1);
     // last_error_buffer[sizeof(last_error_buffer) - 1] = '\0'; // Ensure null termination
 }
-
-// --- C API Implementation ---
 
 extern "C" {
 
@@ -121,7 +119,7 @@ shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle) {
     return conn->get_raw_buf();
 }
 
-size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
+size_t hires_get_shm_size(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
      if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_buffer_size");
@@ -131,24 +129,24 @@ size_t hires_get_buffer_size(HiResLoggerConnHandle* handle) {
     return conn->get_mapped_size();
 }
 
-size_t hires_get_rb_size(HiResLoggerConnHandle* handle) {
+size_t hires_get_rb_capacity(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_rb_size");
         return 0;
     }
     HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
-    return conn->get_rb_size();
+    return conn->get_rb_capacity();
 }
 
-size_t hires_get_rb_mask(HiResLoggerConnHandle* handle) {
+size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_rb_mask");
         return 0;
     }
     HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
-    return conn->get_rb_mask();
+    return conn->get_rb_idx_mask();
 }
 
 } // extern "C"

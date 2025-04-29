@@ -1,5 +1,5 @@
-#ifndef PROFILER_C_API_H
-#define PROFILER_C_API_H
+#ifndef HIRES_RT_C_H
+#define HIRES_RT_C_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -7,7 +7,6 @@
 
 #include "../../shared/common.h"
 
-// Opaque pointer type for the ProfilerConnection object
 typedef struct HiResLoggerConnHandle HiResLoggerConnHandle;
 
 #ifdef __cplusplus
@@ -64,10 +63,10 @@ shared_ring_buffer_t* hires_get_buffer(HiResLoggerConnHandle* handle);
  * @param handle The handle returned by profiler_connect. Must not be NULL.
  * @return Size in bytes, or 0 if handle is invalid.
  */
-size_t hires_get_buffer_size(HiResLoggerConnHandle* handle);
+size_t hires_get_shm_size(HiResLoggerConnHandle* handle);
 
-size_t hires_get_rb_size(HiResLoggerConnHandle* handle);
-size_t hires_get_rb_mask(HiResLoggerConnHandle* handle);
+size_t hires_get_rb_capacity(HiResLoggerConnHandle* handle);
+size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle);
 
 /**
  * @brief Gets the last error message encountered by the API functions for the current thread.
@@ -80,7 +79,7 @@ size_t hires_get_rb_mask(HiResLoggerConnHandle* handle);
 const char* hires_get_last_error(void);
 
 #ifdef __cplusplus
-} // extern "C"
+}
 #endif
 
-#endif // PROFILER_C_API_H
+#endif // HIRES_RT_C_H

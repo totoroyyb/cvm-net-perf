@@ -34,8 +34,9 @@
 
 // --- IOCTL Definitions ---
 typedef struct {
-    prof_size_t buffer_size; // Actual number of entries
-    prof_size_t size_mask;   // Mask (buffer_size - 1)
+    prof_size_t capacity;                   // Actual number of entries available in the RB
+    prof_size_t idx_mask;                   // Mask (usually capacity - 1)
+    prof_size_t shm_size_bytes_unaligned;   // Size of the shared memory region in bytes (unaligned)
 } hires_rb_meta_t;
 
 #define HIRES_IOCTL_MAGIC 'h'
@@ -72,9 +73,11 @@ typedef struct {
     char pad1[PROF_CACHE_LINE_SIZE > sizeof(prof_size_t) ? PROF_CACHE_LINE_SIZE - sizeof(prof_size_t) : 1];
 
     // Metadata & Stats
-    uint64_t buffer_size;
-    uint64_t size_mask;
-    uint64_t dropped_count; // Plain type - atomicity handled by operations
+    uint64_t shm_size_bytes_unaligned;
+    uint64_t shm_size_bytes_aligned;
+    uint64_t capacity;
+    uint64_t idx_mask;
+    uint64_t dropped_count;
     char pad2[PROF_CACHE_LINE_SIZE > (sizeof(uint64_t) * 3) ? PROF_CACHE_LINE_SIZE - (sizeof(uint64_t) * 3) : 1]; // Adjusted padding size calculation
 
     // The Actual Buffer

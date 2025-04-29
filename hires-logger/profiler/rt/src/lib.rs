@@ -1,6 +1,6 @@
-//! Safe Rust wrapper around the profiler_rt_sys FFI bindings.
+//! Safe Rust wrapper for FFI bindings.
 
-use rt_ffi as ffi; // Use the raw bindings crate
+use rt_ffi as ffi;
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::marker::PhantomData;
@@ -56,7 +56,7 @@ impl<'a> HiResConn<'a> {
     ///                   Uses default if None.
     ///
     /// # Errors
-    /// Returns `ProfilerError` if connection fails.
+    /// Returns `HiResError` if connection fails.
     pub fn connect(device_path: Option<&Path>) -> Result<Self, HiResError> {
         let path_cstr = device_path
             .map(|p| CString::new(p.to_string_lossy().as_bytes()))
@@ -112,19 +112,19 @@ impl<'a> HiResConn<'a> {
     }
 
     #[inline]
-    pub fn get_rb_size(&self) -> u64 {
+    pub fn get_rb_capacity(&self) -> u64 {
         if self.handle.is_null() {
             return 0;
         }
-        return unsafe { ffi::hires_get_rb_size(self.handle) as u64 };
+        return unsafe { ffi::hires_get_rb_capacity(self.handle) as u64 };
     }
 
     #[inline]
-    pub fn get_rb_mask(&self) -> u64 {
+    pub fn get_rb_idx_mask(&self) -> u64 {
         if self.handle.is_null() {
             return 0;
         }
-        return unsafe { ffi::hires_get_rb_mask(self.handle) as u64 };
+        return unsafe { ffi::hires_get_rb_idx_mask(self.handle) as u64 };
     }
 
     /// Gets a raw pointer to the underlying shared memory buffer structure.
@@ -145,11 +145,11 @@ impl<'a> HiResConn<'a> {
 
     /// Gets the size of the mapped shared memory region.
     #[inline]
-    pub fn get_buffer_size(&self) -> u64 {
+    pub fn get_shm_size(&self) -> u64 {
         if self.handle.is_null() {
             return 0;
         }
-        unsafe { ffi::hires_get_buffer_size(self.handle) as u64 }
+        unsafe { ffi::hires_get_shm_size(self.handle) as u64 }
     }
 
     // --- Consumer-specific helpers (could be in a separate Consumer struct) ---

@@ -36,8 +36,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //     return Ok(()); // Or return an error
     // }
 
-    let size = connection.get_rb_size();
-    let mask = connection.get_rb_mask();
+    let size = connection.get_rb_capacity();
+    let mask = connection.get_rb_idx_mask();
     
      println!("Buffer Size: {}, Mask: 0x{:x}", size, mask);
      if size == 0 || (size & mask) != 0 {
