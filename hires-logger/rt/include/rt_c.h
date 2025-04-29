@@ -1,6 +1,7 @@
 #ifndef HIRES_RT_C_H
 #define HIRES_RT_C_H
 
+#include <cstdint>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -67,6 +68,7 @@ size_t hires_get_shm_size(HiResLoggerConnHandle* handle);
 
 size_t hires_get_rb_capacity(HiResLoggerConnHandle* handle);
 size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle);
+uint64_t hires_get_cycles_per_us(HiResLoggerConnHandle* handle);
 
 /**
  * @brief Gets the last error message encountered by the API functions for the current thread.

@@ -19,9 +19,13 @@ class HiResConn {
 private:
   int fd_ = -1;
   shared_ring_buffer_t *shm_buf_ = nullptr;
-  uint64_t rb_runtime_capacity_ = 0; // RB capacity
+  // RB capacity
+  uint64_t rb_runtime_capacity_ = 0;
   uint64_t rb_runtime_idx_mask_ = 0;
-  uint64_t rb_runtime_shm_size_ = 0; // Size of the mapped region
+  // Size of the mapped region
+  uint64_t rb_runtime_shm_size_ = 0;
+  // TSC cycles per microsecond
+  PROF_CACHE_LINE_ALIGNED uint64_t cycles_per_us_ = 0;
 
   // Helper to get monotonic time
   static uint64_t get_monotonic_ns();
@@ -32,6 +36,11 @@ private:
     this->rb_runtime_idx_mask_ = static_cast<uint64_t>(meta.idx_mask);
     this->rb_runtime_shm_size_ =
         static_cast<uint64_t>(meta.shm_size_bytes_unaligned);
+  }
+
+  inline __attribute__((always_inline)) void
+  set_runtime_cycle_per_us(uint64_t cycle_per_us) noexcept {
+    this->cycles_per_us_ = cycle_per_us;
   }
 
 public:
@@ -47,16 +56,13 @@ public:
    */
   ~HiResConn();
 
-  // --- Rule of Five: Disable copy/move for simplicity ---
-  // Prevent accidental copying or moving which would mess up resource
-  // management. Could be implemented properly if needed, but deletion is safer
-  // for now.
   HiResConn(const HiResConn &) = delete;
   HiResConn &operator=(const HiResConn &) = delete;
   HiResConn(HiResConn &&) = delete;
   HiResConn &operator=(HiResConn &&) = delete;
 
   std::optional<hires_rb_meta_t> get_rb_meta() const noexcept;
+  uint64_t get_kmod_cycles_per_us() const noexcept;
 
   /**
    * @brief Logs an event to the shared ring buffer (Userspace Producer Logic).
@@ -109,13 +115,20 @@ public:
   get_rb_capacity() const noexcept {
     return rb_runtime_capacity_;
   }
+
   inline __attribute__((always_inline)) size_t
   get_rb_idx_mask() const noexcept {
     return rb_runtime_idx_mask_;
   }
+
   inline __attribute__((always_inline)) size_t
   get_rb_shm_size() const noexcept {
     return rb_runtime_shm_size_;
+  }
+
+  inline __attribute__((always_inline)) uint64_t
+  get_cycle_per_us() const noexcept {
+    return cycles_per_us_;
   }
 };
 

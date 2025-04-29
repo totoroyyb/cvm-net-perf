@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 #include <string>
 
 #include "../include/rt_c.h"
@@ -147,6 +148,16 @@ size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle) {
     }
     HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
     return conn->get_rb_idx_mask();
+}
+
+uint64_t hires_get_cycle_per_us(HiResLoggerConnHandle* handle) {
+    set_last_error(""); // Clear last error
+    if (handle == nullptr) {
+        set_last_error("Invalid handle passed to profiler_get_cycle_per_us");
+        return 0;
+    }
+    HiResLogger::HiResConn* conn = reinterpret_cast<HiResLogger::HiResConn*>(handle);
+    return conn->get_cycle_per_us();
 }
 
 } // extern "C"

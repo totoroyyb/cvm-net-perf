@@ -213,8 +213,8 @@ static long hireslogger_dev_ioctl(struct file *filp, unsigned int cmd,
     break;
   }
 
-  case HIRES_IOCTL_GET_TSC_CYCLE_PER_MS: {
-    pr_info("kHiResLogger: IOCTL: Get calibrated TSC freq (cycles/ms).\n");
+  case HIRES_IOCTL_GET_TSC_CYCLE_PER_US: {
+    pr_info("kHiResLogger: IOCTL: Get calibrated TSC freq (cycles/us).\n");
     if (cycles_per_us == 0) {
       pr_err("kHiResLogger: TSC freq not calibrated yet or error happened.\n");
       ret = -EFAULT;

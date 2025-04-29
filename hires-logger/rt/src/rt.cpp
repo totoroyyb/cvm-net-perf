@@ -58,6 +58,7 @@ HiResConn::HiResConn(const std::string &device_path) {
             << ", idx mask: " << rb_meta->idx_mask
             << ", shm size: " << rb_meta->shm_size_bytes_unaligned << std::endl;
   this->set_runtime_rb_meta(*rb_meta);
+  this->set_runtime_cycle_per_us(this->get_kmod_cycles_per_us());
 
   // 3. Map the device memory
   void *mapped_ptr =
@@ -127,6 +128,19 @@ std::optional<hires_rb_meta_t> HiResConn::get_rb_meta() const noexcept {
     return std::nullopt;
   }
   return meta;
+}
+
+uint64_t HiResConn::get_kmod_cycles_per_us() const noexcept {
+  long ioctl_ret = 0;
+  uint64_t cycles_per_us = 0;
+  ioctl_ret =
+      ioctl(this->get_fd(), HIRES_IOCTL_GET_TSC_CYCLE_PER_US, &cycles_per_us);
+  if (ioctl_ret < 0) {
+    std::cerr << "ERROR: HIRES_IOCTL_GET_TSC_CYCLE_PER_MS failed. Error "
+              << errno << ": " << strerror(errno) << std::endl;
+    return 0;
+  }
+  return cycles_per_us;
 }
 
 bool HiResConn::log(uint32_t event_id, uint64_t data1, uint64_t data2) {
