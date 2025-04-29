@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <string>
 
 #include "../include/rt_c.h"

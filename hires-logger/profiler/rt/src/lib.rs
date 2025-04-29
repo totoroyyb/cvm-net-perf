@@ -38,10 +38,13 @@ fn check_error() -> Result<(), HiResError> {
 }
 
 // --- Safe Wrapper Struct ---
-/// Represents a connection to the profiler device.
-/// Manages the lifetime of the underlying C handle using RAII.
+const CACHE_LINE_SIZE: usize = 64;
+
 pub struct HiResConn<'a> {
     handle: *mut ffi::HiResLoggerConnHandle,
+    _padding_before: [u8; CACHE_LINE_SIZE - std::mem::size_of::<*mut ffi::HiResLoggerConnHandle>()],
+    #[repr(align(64))]
+    pub cycle_per_us: u64, 
     // Use PhantomData to indicate lifetime relationship if buffer access is tied
     // to the connection's lifetime, although the buffer itself is static memory.
     // Not strictly needed here as get_buffer returns a raw pointer.
@@ -75,6 +78,7 @@ impl<'a> HiResConn<'a> {
                 message: "profiler_connect returned null without setting error".to_string(),
             })
         } else {
+            unsafe { ffi::hires_get}
             Ok(HiResConn {
                 handle,
                 _marker: PhantomData,

@@ -1,7 +1,6 @@
 #ifndef HIRES_RT_C_H
 #define HIRES_RT_C_H
 
-#include <cstdint>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
