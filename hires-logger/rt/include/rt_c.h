@@ -6,7 +6,6 @@
 #include <stdbool.h>
 
 #include "../../shared/common.h"
-#include "../../shared/ops.h"
 
 typedef struct HiResLoggerConnHandle HiResLoggerConnHandle;
 
