@@ -4,6 +4,7 @@ use rt_ffi as ffi;
 use std::ffi::{CStr, CString};
 use std::fmt;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::path::Path;
 use std::ptr;
 
@@ -38,13 +39,20 @@ fn check_error() -> Result<(), HiResError> {
 }
 
 // --- Safe Wrapper Struct ---
-const CACHE_LINE_SIZE: usize = 64;
+#[repr(align(64))]
+pub struct AlignedU64(pub u64);
+
+impl Deref for AlignedU64 {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub struct HiResConn<'a> {
     handle: *mut ffi::HiResLoggerConnHandle,
-    _padding_before: [u8; CACHE_LINE_SIZE - std::mem::size_of::<*mut ffi::HiResLoggerConnHandle>()],
-    #[repr(align(64))]
-    pub cycle_per_us: u64, 
+    pub cycle_per_us: AlignedU64, 
     // Use PhantomData to indicate lifetime relationship if buffer access is tied
     // to the connection's lifetime, although the buffer itself is static memory.
     // Not strictly needed here as get_buffer returns a raw pointer.
@@ -78,9 +86,10 @@ impl<'a> HiResConn<'a> {
                 message: "profiler_connect returned null without setting error".to_string(),
             })
         } else {
-            unsafe { ffi::hires_get}
+            let cycle_per_us = unsafe { ffi::hires_get_cycles_per_us(handle) };
             Ok(HiResConn {
                 handle,
+                cycle_per_us: AlignedU64(cycle_per_us),
                 _marker: PhantomData,
             })
         }
@@ -155,8 +164,11 @@ impl<'a> HiResConn<'a> {
         }
         unsafe { ffi::hires_get_shm_size(self.handle) as u64 }
     }
-
-    // --- Consumer-specific helpers (could be in a separate Consumer struct) ---
+    
+    #[inline]
+    pub fn get_cycles_per_us(&self) -> u64 {
+        return *self.cycle_per_us;
+    }
 }
 
 // Implement Drop to automatically call profiler_disconnect
