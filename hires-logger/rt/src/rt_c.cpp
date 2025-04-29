@@ -149,7 +149,7 @@ size_t hires_get_rb_idx_mask(HiResLoggerConnHandle* handle) {
     return conn->get_rb_idx_mask();
 }
 
-uint64_t hires_get_cycle_per_us(HiResLoggerConnHandle* handle) {
+uint64_t hires_get_cycles_per_us(HiResLoggerConnHandle* handle) {
     set_last_error(""); // Clear last error
     if (handle == nullptr) {
         set_last_error("Invalid handle passed to profiler_get_cycle_per_us");
