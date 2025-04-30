@@ -12,7 +12,8 @@ CLIENT="../echo/build/echo_client_open"
 # LOG_PREFIX="log_"
 # LOG_PREFIX="dummy_writer_"
 # LOG_PREFIX="file_redirect_20c_2500p_"
-LOG_PREFIX="no_print_20c_2500p_"
+# LOG_PREFIX="no_print_20c_2500p_"
+LOG_PREFIX="hires_20c_2500p_"
 
 prep() {
   mkdir -p logs
