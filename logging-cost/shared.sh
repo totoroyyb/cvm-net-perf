@@ -23,9 +23,7 @@ start_server() {
   # ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/echo/build/echo_server_async > /tmp/server.log 2>&1" >/dev/null 2>&1
   # ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/logging-cost/build/dummy_writer" >/dev/null 2>&1
   # ssh $GUEST_HOSTNAME -p $GUEST_PORT "sudo nohup /home/ybyan/cvm-net-perf/hires-logger/build/echo_server_hires > /tmp/server.log 2>&1" >/dev/null 2>&1
-  ssh $GUEST_HOSTNAME -p $GUEST_PORT "sudo nohup /home/yibo/cvm-net-perf/logging-cost/run_server_w_cpu_pin.sh" >/dev/null 2>&1
-
-
+  ssh $GUEST_HOSTNAME -p $GUEST_PORT "sudo nohup /home/ybyan/cvm-net-perf/logging-cost/run_server_w_cpu_pin.sh" >/dev/null 2>&1
 }
 
 stop_server() {
