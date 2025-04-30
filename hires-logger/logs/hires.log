@@ -1,0 +1,16 @@
+ybyan@ybyan-cvm:~/cvm-net-perf/hires-logger/profiler$ sudo taskset -c 4 ./target/release/profiler -p 0
+Profiler Consumer starting...
+Connecting to device: /dev/khires
+Polling interval: 0 ms
+RB capacity: 65536, idx mask: 65535, shm size: 2621696
+Connected successfully.
+Buffer Size: 65536, Mask: 0xffff
+Ctrl+C handler set. Press Ctrl+C to stop.
+Starting consumer loop...
+^C
+Ctrl+C received, shutting down...
+---- Summary ----
+Event ID: 1, Count: 421382, Average: 8486.977, Duration: 3.2099004 us
+Event ID: 2, Count: 421382, Average: 15595.518, Duration: 5.898456 us
+
+Total entries processed: 842764, Total entries dropped: 0
