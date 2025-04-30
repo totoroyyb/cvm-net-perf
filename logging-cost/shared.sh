@@ -20,13 +20,23 @@ prep() {
 }
 
 start_server() {
-  ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/echo/build/echo_server_async > /tmp/server.log 2>&1" >/dev/null 2>&1
+  # ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/echo/build/echo_server_async > /tmp/server.log 2>&1" >/dev/null 2>&1
   # ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/logging-cost/build/dummy_writer" >/dev/null 2>&1
+  ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/hires-logger/build/echo_server_hires > /tmp/server.log 2>&1" >/dev/null 2>&1
 }
 
 stop_server() {
   ssh $GUEST_HOSTNAME -p $GUEST_PORT "pkill -9 echo_server_"
   ssh $GUEST_HOSTNAME -p $GUEST_PORT "pkill -9 dummy_"
+}
+
+start_hires_user_profiler() {
+  ssh $GUEST_HOSTNAME -p $GUEST_PORT "nohup /home/ybyan/cvm-net-perf/hires-logger/profiler/target/release/profiler > /tmp/hires_profiler.log 2>&1" >/dev/null 2>&1
+}
+
+stop_hires_user_profiler() {
+  ssh $GUEST_HOSTNAME -p $GUEST_PORT "pkill -2 profiler"
+  sleep 4 # ensure profiler is done collecting data.
 }
 
 measure_exits() {
