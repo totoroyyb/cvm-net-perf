@@ -19,7 +19,7 @@ run_measure_exits() {
 
   $CLIENT >/dev/null 2>&1
 
-  stop_server
+  stop_server true
   stop_perf
 }
 
@@ -33,7 +33,7 @@ run_measure_cycles() {
 
   $CLIENT >/dev/null 2>&1
 
-  stop_server
+  stop_server true
   stop_perf
 }
 
