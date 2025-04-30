@@ -78,19 +78,19 @@ impl Benchmarks {
         Benchmarks { event_bucket }
     }
 
-    fn summary(&self) {
-        let result = self
+    fn summary(&self) -> Vec<EventResult> {
+        self
             .event_bucket
             .iter()
             .map(|e| e.summary())
             .filter(|e| e.count > 0)
-            .collect::<Vec<EventResult>>();
-        for entry in result.iter() {
-            println!(
-                "Event ID: {}, Count: {}, Average: {}",
-                entry.id, entry.count, entry.avg
-            );
-        }
+            .collect::<Vec<EventResult>>()
+        // for entry in result.iter() {
+        //     println!(
+        //         "Event ID: {}, Count: {}, Average: {}",
+        //         entry.id, entry.count, entry.avg
+        //     );
+        // }
     }
 }
 
@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Some(entry) = entry {
             if entry.flags & (LOG_FLAG_VALID as u16) != 0 {
-                println!("Entry: {:?}", entry);
+                // println!("Entry: {:?}", entry);
                 entries_processed += 1;
                 let e_id = entry.event_id;
                 let b_entry = &mut bench.event_bucket[e_id as usize];
@@ -165,7 +165,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     thread::sleep(Duration::from_millis(args.poll_interval_ms));
                 }
             } else {
-                thread::yield_now();
+                // we want to burn the CPU to get the fastest possible consume rate.
+                // thread::yield_now();
             }
         }
         // Optional: Check for dropped count if needed
@@ -178,7 +179,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // --- Summary ---
     println!("---- Summary ----");
-    bench.summary();
+    let cycle_rate = connection.get_cycles_per_us();
+    let result = bench.summary();
+    for entry in result.iter() {
+        println!(
+            "Event ID: {}, Count: {}, Average: {}, Duration: {} us",
+            entry.id, entry.count, entry.avg, entry.avg / (cycle_rate as f32)
+        );
+    }
     println!();
     
     let drop_num = connection.get_drop_num();

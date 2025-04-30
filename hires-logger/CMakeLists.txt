@@ -33,4 +33,8 @@ if(BUILD_EXAMPLES)
     add_executable(consumer examples/consumer.cpp)
     target_link_libraries(consumer PRIVATE hires_rt)
     target_include_directories(consumer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/rt/include)
+
+    add_executable(echo_server_hires examples/echo_server_async_hires.cpp)
+    target_link_libraries(echo_server_hires PRIVATE hires_rt)
+    target_include_directories(echo_server_hires PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/rt/include)
 endif()

@@ -4,10 +4,9 @@
 #include <stdexcept>
 #include <cstdint>
 #include <optional>
-#include <iomanip> // For std::setw, std::hex
+#include <iomanip>
 
-#include "rt.hpp" // Include the HiResLogger runtime header
-// #include "../shared/common.h"   // Include shared definitions like log_entry_t
+#include "rt.hpp"
 
 int main() {
     try {
